@@ -400,8 +400,17 @@ function enterApp() {
 async function initApp() {
     document.getElementById('loadingOverlay').classList.remove('hidden');
     await loadVenues();
-    // Load data for all venues
-    const activeVenues = venues.length ? venues : [{VenueID:58946}];
+    // Filter to only Ilona Host Debug for testing (VenueID 58717)
+    venues = venues.filter(v => v.VenueID === 58717);
+    if(!venues.length) venues = [{VenueID:58717, Name:'Ilona Host Debug', Rooms:6}];
+    // Rebuild venue selector
+    const sel = document.getElementById('venueSelector');
+    sel.innerHTML = '';
+    venues.forEach(v => {
+        sel.innerHTML += `<option value="${v.VenueID}">${v.Name} (${v.Rooms} rooms)</option>`;
+    });
+    selectedVenueId = '58717';
+    const activeVenues = venues;
     for(const v of activeVenues) {
         await loadRoomTypes(v.VenueID);
         if(roomTypes[v.VenueID]) {
@@ -410,9 +419,9 @@ async function initApp() {
             }
         }
     }
-    // Load reservations for next 12 months
+    // Load reservations: 3 months back + 12 months forward
     const now = new Date();
-    const start = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+    const start = toYMD(new Date(now.getFullYear(), now.getMonth()-3, 1));
     const end12 = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
     for(const v of activeVenues) {
         const res = await loadReservations(v.VenueID, start, end12);
