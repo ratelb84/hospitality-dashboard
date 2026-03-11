@@ -252,12 +252,8 @@
 
 <script>
 // ============ CONFIG ============
-const SEMPA_BASE = 'https://internal.semper.co.za/IntegrationsAPIDebug/';
-const SEMPA_HEADERS = {
-    'x-channel': 'NTc0',
-    'x-api-key': '12345678900987654321!@#$%%$#@!',
-    'x-token': 'T3BlbkFQSQ=='
-};
+// SEMPA API via serverless proxy (CORS blocks x-channel header in direct calls)
+const SEMPA_PROXY = '/api/sempa';
 const SUPABASE_URL = 'https://hqfszlxdkvwlvpwqqmbd.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxZnN6bHhka3Z3bHZwd3FxbWJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NTExODgsImV4cCI6MjA4ODEyNzE4OH0.4OlPny5uJFTslf6iWfF7fAaVl0x2I_VG63QPa1Amq8Q';
 
@@ -297,7 +293,12 @@ function daysInMonth(y,m) { return new Date(y,m,0).getDate(); }
 // ============ API CALLS ============
 async function sempaGet(endpoint) {
     try {
-        const r = await fetch(SEMPA_BASE + endpoint, {headers: SEMPA_HEADERS});
+        // Split endpoint into path and query params for proxy
+        const [path, qs] = endpoint.split('?');
+        const params = new URLSearchParams(qs || '');
+        params.set('path', path);
+        const url = SEMPA_PROXY + '?' + params.toString();
+        const r = await fetch(url);
         if(!r.ok) throw new Error(`API ${r.status}`);
         return await r.json();
     } catch(e) {
