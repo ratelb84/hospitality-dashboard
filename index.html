@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospitality Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Poppins','system-ui','sans-serif']}}}}</script>
+    <style>
+        body{background:#0f172a}
+        .sidebar{background:#0c1222;border-right:1px solid rgba(255,255,255,0.06)}
+        .nav-item{color:rgba(255,255,255,0.5);transition:all .15s;font-size:13px;padding:9px 16px;border-radius:8px;display:flex;align-items:center;gap:10px;cursor:pointer;margin:2px 8px}
+        .nav-item:hover{color:rgba(255,255,255,0.85);background:rgba(99,102,241,0.1)}
+        .nav-item.active{color:#818cf8;background:rgba(99,102,241,0.15);font-weight:500}
+        .nav-item svg{width:18px;height:18px;flex-shrink:0}
+        .card{background:#1e293b;border:1px solid rgba(255,255,255,0.06);border-radius:12px}
+        .card-header{padding:18px 24px;border-bottom:1px solid rgba(255,255,255,0.06)}
+        .stat-card{background:linear-gradient(135deg,#1e293b,#1a2332);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:20px 24px}
+        .badge{display:inline-flex;align-items:center;font-size:10px;font-weight:600;padding:3px 10px;border-radius:9999px;text-transform:uppercase;letter-spacing:0.03em}
+        .badge-green{background:rgba(16,185,129,0.15);color:#34d399}
+        .badge-amber{background:rgba(245,158,11,0.15);color:#fbbf24}
+        .badge-red{background:rgba(239,68,68,0.15);color:#f87171}
+        .badge-blue{background:rgba(59,130,246,0.15);color:#60a5fa}
+        .badge-purple{background:rgba(139,92,246,0.15);color:#a78bfa}
+        .badge-gray{background:rgba(148,163,184,0.15);color:#94a3b8}
+        .btn{font-size:13px;font-weight:500;padding:8px 18px;border-radius:8px;cursor:pointer;transition:all .15s;border:none;display:inline-flex;align-items:center;gap:6px}
+        .btn-accent{background:#6366f1;color:#fff}.btn-accent:hover{background:#4f46e5}
+        .btn-outline{background:transparent;border:1px solid rgba(255,255,255,0.15);color:#94a3b8}.btn-outline:hover{border-color:#6366f1;color:#818cf8}
+        .btn-sm{font-size:11px;padding:5px 12px;border-radius:6px}
+        .input-field{background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 14px;font-size:13px;color:#e2e8f0;outline:none;font-family:inherit}
+        .input-field:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,0.15)}
+        .input-field::placeholder{color:#475569}
+        .select-field{background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 14px;font-size:13px;color:#e2e8f0;outline:none;font-family:inherit;cursor:pointer}
+        .topbar{background:#0f172a;border-bottom:1px solid rgba(255,255,255,0.06)}
+        .scroll-area::-webkit-scrollbar{width:5px}
+        .scroll-area::-webkit-scrollbar-track{background:transparent}
+        .scroll-area::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+        .login-bg{background:linear-gradient(135deg,#0c1222 0%,#0f172a 50%,#1e1b4b 100%)}
+        .table-dark{width:100%;border-collapse:separate;border-spacing:0}
+        .table-dark thead th{background:#0f172a;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);text-align:left;position:sticky;top:0;cursor:pointer;user-select:none}
+        .table-dark tbody td{padding:12px 16px;font-size:13px;color:#cbd5e1;border-bottom:1px solid rgba(255,255,255,0.04)}
+        .table-dark tbody tr:hover{background:rgba(99,102,241,0.05)}
+        .occ-cell{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border-radius:6px;padding:8px 4px;min-width:60px;cursor:pointer;transition:all .15s}
+        .occ-cell:hover{transform:scale(1.05)}
+        .occ-red{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.3)}
+        .occ-yellow{background:rgba(245,158,11,0.2);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)}
+        .occ-green{background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.3)}
+        .heatmap-cell{width:26px;height:26px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;cursor:pointer;transition:all .1s;margin:1px}
+        .heatmap-cell:hover{transform:scale(1.3);z-index:10}
+        .heat-empty{background:rgba(239,68,68,0.35);color:#fca5a5}
+        .heat-partial{background:rgba(245,158,11,0.35);color:#fde68a}
+        .heat-full{background:rgba(16,185,129,0.35);color:#6ee7b7}
+        .heat-none{background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.15)}
+        .pulse-dot{width:8px;height:8px;border-radius:50%;animation:pulse 2s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+        .fade-in{animation:fadeIn .3s ease}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        .loading-spinner{border:3px solid rgba(255,255,255,0.1);border-top:3px solid #6366f1;border-radius:50%;width:32px;height:32px;animation:spin 0.8s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .nav-section{color:rgba(255,255,255,0.25);font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:16px 16px 6px;margin-top:4px}
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased text-slate-200">
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="login-bg min-h-screen flex items-center justify-center">
+    <div class="card p-8 w-full max-w-sm fade-in">
+        <div class="text-center mb-6">
+            <div class="w-14 h-14 bg-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+            </div>
+            <h1 class="text-xl font-bold text-white">Hospitality Dashboard</h1>
+            <p class="text-xs text-slate-400 mt-1">Property Management Console</p>
+        </div>
+        <form onsubmit="handleLogin(event)">
+            <div class="mb-3"><label class="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">Username</label><input type="text" id="loginUser" class="input-field w-full" placeholder="Enter username" required autofocus></div>
+            <div class="mb-5"><label class="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">Password</label><input type="password" id="loginPass" class="input-field w-full" placeholder="Enter password" required></div>
+            <div id="loginError" class="text-xs text-red-400 mb-3 hidden"></div>
+            <button type="submit" class="btn btn-accent w-full justify-center py-3">Sign In</button>
+        </form>
+    </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="mainApp" class="hidden"><div class="flex min-h-screen">
+<!-- SIDEBAR -->
+<nav class="sidebar w-60 flex flex-col flex-shrink-0 min-h-screen fixed left-0 top-0 z-40">
+    <div class="px-4 py-5 border-b border-white/5 flex items-center gap-3">
+        <div class="w-8 h-8 bg-indigo-500/20 rounded-lg flex items-center justify-center"><svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg></div>
+        <span class="text-sm font-semibold text-white">Lodge Manager</span>
+    </div>
+    <div class="flex-1 py-3 overflow-y-auto scroll-area">
+        <div class="nav-section">Overview</div>
+        <div class="nav-item active" data-page="dashboard" onclick="showPage('dashboard')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>Dashboard</div>
+        <div class="nav-section">Operations</div>
+        <div class="nav-item" data-page="occupancy" onclick="showPage('occupancy')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>Occupancy Calendar</div>
+        <div class="nav-item" data-page="reservations" onclick="showPage('reservations')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Reservations</div>
+        <div class="nav-item" data-page="gaps" onclick="showPage('gaps')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>Gap Analysis</div>
+        <div class="nav-section">Finance</div>
+        <div class="nav-item" data-page="budget" onclick="showPage('budget')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Budget vs Actual</div>
+        <div class="nav-section">System</div>
+        <div class="nav-item" data-page="settings" onclick="showPage('settings')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Settings</div>
+    </div>
+    <div class="px-4 py-3 border-t border-white/5"><div class="flex items-center gap-3 cursor-pointer" onclick="handleLogout()"><div id="sidebarAvatar" class="w-8 h-8 rounded-full bg-indigo-500/30 flex items-center justify-center text-xs font-bold text-indigo-300">D</div><div class="flex-1 min-w-0"><div id="sidebarName" class="text-xs font-medium text-slate-300 truncate">Don</div><div class="text-[10px] text-slate-500">Sign out</div></div></div></div>
+</nav>
+
+<!-- MAIN CONTENT -->
+<main class="flex-1 ml-60">
+    <div class="topbar px-6 py-3 flex items-center justify-between sticky top-0 z-30">
+        <div class="flex items-center gap-4"><h2 id="pageTitle" class="text-lg font-semibold text-white">Dashboard</h2><select id="venueSelector" class="select-field text-xs" onchange="onVenueChange()"><option value="all">All Properties</option></select></div>
+        <div class="flex items-center gap-3"><div class="flex items-center gap-2 text-xs text-slate-400"><div class="pulse-dot bg-emerald-400"></div><span>Connected</span></div><button onclick="refreshData()" class="btn btn-outline btn-sm"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh</button></div>
+    </div>
+    <div class="p-6">
+        <div id="loadingOverlay" class="flex items-center justify-center py-20"><div class="text-center"><div class="loading-spinner mx-auto mb-4"></div><p class="text-sm text-slate-400">Loading data from SEMPA...</p></div></div>
+
+        <!-- DASHBOARD PAGE -->
+        <div id="page-dashboard" class="hidden fade-in">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Total Rooms</div><div id="statTotalRooms" class="text-2xl font-bold text-white">—</div><div class="text-xs text-slate-500 mt-1">Across all types</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Occupied Tonight</div><div id="statOccupied" class="text-2xl font-bold text-indigo-400">—</div><div class="text-xs text-slate-500 mt-1">rooms booked</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Occupancy %</div><div id="statOccPct" class="text-2xl font-bold text-emerald-400">—</div><div class="text-xs text-slate-500 mt-1">Tonight</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Arrivals Today</div><div id="statArrivals" class="text-2xl font-bold text-amber-400">—</div><div class="text-xs text-slate-500 mt-1">Check-ins</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Departures Today</div><div id="statDepartures" class="text-2xl font-bold text-rose-400">—</div><div class="text-xs text-slate-500 mt-1">Check-outs</div></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 card"><div class="card-header"><h3 class="text-sm font-semibold text-white">12-Month Occupancy Forecast</h3></div><div class="p-6"><canvas id="occupancyChart" height="200"></canvas></div></div>
+                <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Upcoming Arrivals</h3><p class="text-xs text-slate-500 mt-0.5">Next 7 days</p></div><div id="upcomingArrivals" class="p-4 space-y-2 max-h-[420px] overflow-y-auto scroll-area"></div></div>
+            </div>
+        </div>
+
+        <!-- OCCUPANCY CALENDAR PAGE -->
+        <div id="page-occupancy" class="hidden fade-in">
+            <div class="card mb-6">
+                <div class="card-header flex items-center justify-between flex-wrap gap-3">
+                    <div><h3 class="text-sm font-semibold text-white">12-Month Occupancy Calendar</h3><p class="text-xs text-slate-400 mt-0.5">Room types x Months — click cell for daily breakdown</p></div>
+                    <div class="flex items-center gap-2 text-xs"><span class="w-3 h-3 rounded bg-red-500/30 border border-red-500/50"></span><span class="text-slate-400">&lt;50%</span><span class="w-3 h-3 rounded bg-amber-500/30 border border-amber-500/50 ml-2"></span><span class="text-slate-400">50-75%</span><span class="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/50 ml-2"></span><span class="text-slate-400">&gt;75%</span></div>
+                </div>
+                <div class="p-6 overflow-x-auto"><div id="occCalendarGrid"></div></div>
+            </div>
+            <div id="occDailyDetail" class="card hidden fade-in">
+                <div class="card-header flex items-center justify-between"><h3 id="occDailyTitle" class="text-sm font-semibold text-white">Daily Detail</h3><button onclick="document.getElementById('occDailyDetail').classList.add('hidden')" class="text-slate-400 hover:text-white text-sm cursor-pointer">✕</button></div>
+                <div id="occDailyContent" class="p-6"></div>
+            </div>
+        </div>
+
+        <!-- RESERVATIONS PAGE -->
+        <div id="page-reservations" class="hidden fade-in">
+            <div class="card">
+                <div class="card-header flex items-center justify-between flex-wrap gap-3">
+                    <h3 class="text-sm font-semibold text-white">Reservations</h3>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <select id="filterStatus" class="select-field text-xs" onchange="renderReservations()"><option value="all">All Statuses</option><option value="active" selected>Active (excl. Cancelled)</option><option value="Provisional">Provisional</option><option value="Confirmed">Confirmed</option><option value="In House">In House</option><option value="Checked Out">Checked Out</option><option value="Cancelled">Cancelled</option></select>
+                        <select id="filterRoomType" class="select-field text-xs" onchange="renderReservations()"><option value="all">All Room Types</option></select>
+                        <input type="date" id="filterDateFrom" class="input-field text-xs" onchange="renderReservations()">
+                        <input type="date" id="filterDateTo" class="input-field text-xs" onchange="renderReservations()">
+                        <input type="text" id="filterSearch" class="input-field text-xs w-36" placeholder="Search guest..." oninput="renderReservations()">
+                    </div>
+                </div>
+                <div class="overflow-x-auto max-h-[600px] overflow-y-auto scroll-area">
+                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
+                </div>
+                <div class="p-4 text-xs text-slate-500" id="resCount"></div>
+            </div>
+        </div>
+
+        <!-- GAP ANALYSIS PAGE -->
+        <div id="page-gaps" class="hidden fade-in">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Gap Nights (3 months)</div><div id="gapTotal" class="text-3xl font-bold text-rose-400">—</div><div class="text-xs text-slate-500 mt-1">Empty room-nights</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Avg Occupancy</div><div id="gapAvgOcc" class="text-3xl font-bold text-amber-400">—</div><div class="text-xs text-slate-500 mt-1">Next 3 months</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Worst Month</div><div id="gapWorstMonth" class="text-xl font-bold text-red-400 mt-1">—</div><div class="text-xs text-slate-500 mt-1">Lowest occupancy</div></div>
+                <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Best Month</div><div id="gapBestMonth" class="text-xl font-bold text-emerald-400 mt-1">—</div><div class="text-xs text-slate-500 mt-1">Highest occupancy</div></div>
+            </div>
+            <div class="card mb-6"><div class="card-header"><h3 class="text-sm font-semibold text-white">3-Month Availability Heatmap</h3><p class="text-xs text-slate-400 mt-0.5">Red = empty gaps, Yellow = partial, Green = full</p></div><div id="gapHeatmap" class="p-6 overflow-x-auto"></div></div>
+            <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Gap Summary by Room Type</h3></div><div id="gapDetails" class="p-6"></div></div>
+        </div>
+
+        <!-- BUDGET VS ACTUAL PAGE -->
+        <div id="page-budget" class="hidden fade-in">
+            <div class="card mb-6">
+                <div class="card-header flex items-center justify-between"><h3 class="text-sm font-semibold text-white">Budget vs Actual Comparison</h3><button onclick="showBudgetForm()" class="btn btn-accent btn-sm">+ Set Budget</button></div>
+                <div class="p-6"><canvas id="budgetChart" height="180"></canvas></div>
+            </div>
+            <div class="card mb-6">
+                <div class="card-header"><h3 class="text-sm font-semibold text-white">Monthly Breakdown</h3></div>
+                <div class="overflow-x-auto"><table class="table-dark"><thead><tr><th>Month</th><th>Budget Occ%</th><th>Actual Occ%</th><th>Variance</th><th>Budget ADR</th><th>Target Revenue</th><th>Actions</th></tr></thead><tbody id="budgetTableBody"></tbody></table></div>
+            </div>
+            <div id="budgetFormCard" class="card hidden fade-in">
+                <div class="card-header flex items-center justify-between"><h3 class="text-sm font-semibold text-white">Set Monthly Budget</h3><button onclick="document.getElementById('budgetFormCard').classList.add('hidden')" class="text-slate-400 hover:text-white cursor-pointer">✕</button></div>
+                <div class="p-6">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div><label class="block text-xs text-slate-400 mb-1">Year</label><select id="budgetYear" class="select-field w-full text-xs"></select></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">Month</label><select id="budgetMonth" class="select-field w-full text-xs"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">Target Occupancy %</label><input type="number" id="budgetOcc" class="input-field w-full text-xs" min="0" max="100" placeholder="75"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">Target ADR (R)</label><input type="number" id="budgetADR" class="input-field w-full text-xs" min="0" placeholder="2500"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div><label class="block text-xs text-slate-400 mb-1">Target Revenue (R)</label><input type="number" id="budgetRevenue" class="input-field w-full text-xs" min="0" placeholder="500000"></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">Notes</label><input type="text" id="budgetNotes" class="input-field w-full text-xs" placeholder="Optional notes"></div>
+                    </div>
+                    <button onclick="saveBudget()" class="btn btn-accent">Save Budget</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SETTINGS PAGE -->
+        <div id="page-settings" class="hidden fade-in">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card">
+                    <div class="card-header"><h3 class="text-sm font-semibold text-white">Venue Configuration</h3></div>
+                    <div id="venueConfig" class="p-6"></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3 class="text-sm font-semibold text-white">User Management</h3></div>
+                    <div class="p-6">
+                        <div id="userList" class="space-y-3 mb-4"></div>
+                        <div class="border-t border-white/5 pt-4 mt-4">
+                            <h4 class="text-xs font-semibold text-slate-300 mb-3">Add User</h4>
+                            <div class="grid grid-cols-3 gap-3">
+                                <input type="text" id="newUsername" class="input-field text-xs" placeholder="Username">
+                                <input type="text" id="newDisplayName" class="input-field text-xs" placeholder="Display Name">
+                                <input type="password" id="newPassword" class="input-field text-xs" placeholder="Password">
+                            </div>
+                            <button onclick="addUser()" class="btn btn-accent btn-sm mt-3">Add User</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3 class="text-sm font-semibold text-white">System Settings</h3></div>
+                    <div class="p-6 space-y-4">
+                        <div><label class="block text-xs text-slate-400 mb-1">Auto-refresh interval (minutes)</label><select id="refreshInterval" class="select-field w-full text-xs" onchange="setRefreshInterval()"><option value="0">Off</option><option value="5" selected>5 min</option><option value="10">10 min</option><option value="30">30 min</option></select></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">API Status</label><div class="flex items-center gap-2 mt-1"><div class="pulse-dot bg-emerald-400"></div><span class="text-xs text-slate-300">SEMPA API Connected</span></div></div>
+                        <div><label class="block text-xs text-slate-400 mb-1">Version</label><span class="text-xs text-slate-300">v1.0.0 — Phase 1 MVP</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+</div></div>
+
+<!-- RESERVATION DETAIL MODAL -->
+<div id="resDetailModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+    <div class="card p-6 w-full max-w-lg fade-in" style="max-height:85vh;overflow-y:auto">
+        <div class="flex items-center justify-between mb-4"><h3 class="text-sm font-semibold text-white">Reservation Details</h3><button onclick="closeResDetail()" class="text-slate-400 hover:text-white cursor-pointer text-lg">&times;</button></div>
+        <div id="resDetailContent"></div>
+    </div>
+</div>
+
+<script>
+// ============ CONFIG ============
+const SEMPA_BASE = 'https://internal.semper.co.za/IntegrationsAPIDebug/';
+const SEMPA_HEADERS = {
+    'x-channel': 'NTc0',
+    'x-api-key': '12345678900987654321!@#$%%$#@!',
+    'x-token': 'T3BlbkFQSQ=='
+};
+const SUPABASE_URL = 'https://hqfszlxdkvwlvpwqqmbd.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxZnN6bHhka3Z3bHZwd3FxbWJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NTExODgsImV4cCI6MjA4ODEyNzE4OH0.4OlPny5uJFTslf6iWfF7fAaVl0x2I_VG63QPa1Amq8Q';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============ STATE ============
+let currentUser = null;
+let venues = [];
+let roomTypes = {};   // venueId -> [{RoomTypeID, Name, MaxPax}]
+let roomCounts = {};  // venueId -> roomTypeId -> count
+let reservations = []; // all reservations
+let availabilityCache = {}; // key: venueId-roomTypeId-YYYY-MM -> [{Date, Available, Total, ...}]
+let budgets = [];
+let selectedVenueId = 'all';
+let resSort = {field:'checkin', dir: 1};
+let occChart = null;
+let budgetChart = null;
+let refreshTimer = null;
+
+// ============ HELPERS ============
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
+function fmtShort(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short'}) : '—'; }
+function toYMD(d) { return d.toISOString().split('T')[0]; }
+function monthLabel(y,m) { return new Date(y,m-1).toLocaleDateString('en-ZA',{month:'short',year:'2-digit'}); }
+function monthLabelLong(y,m) { return new Date(y,m-1).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}); }
+function statusBadge(s) {
+    const map = {Provisional:'badge-amber',Confirmed:'badge-green','In House':'badge-blue','Checked Out':'badge-gray',Cancelled:'badge-red','Active Out':'badge-purple','Out of Service':'badge-gray'};
+    return `<span class="badge ${map[s]||'badge-gray'}">${s}</span>`;
+}
+function guestName(r) {
+    if(!r.Guests||!r.Guests.length) return 'Unknown';
+    const g = r.Guests[0];
+    return `${g.Firstname||''} ${g.Lastname||''}`.trim()||'Unknown';
+}
+function daysInMonth(y,m) { return new Date(y,m,0).getDate(); }
+
+// ============ API CALLS ============
+async function sempaGet(endpoint) {
+    try {
+        const r = await fetch(SEMPA_BASE + endpoint, {headers: SEMPA_HEADERS});
+        if(!r.ok) throw new Error(`API ${r.status}`);
+        return await r.json();
+    } catch(e) {
+        console.error('SEMPA error:', endpoint, e);
+        return null;
+    }
+}
+
+async function loadVenues() {
+    const data = await sempaGet('OpenAPI/Venues/CRSChannelVenues');
+    if(data) venues = data;
+    const sel = document.getElementById('venueSelector');
+    sel.innerHTML = '<option value="all">All Properties</option>';
+    venues.forEach(v => {
+        sel.innerHTML += `<option value="${v.VenueID}">${v.Name} (${v.Rooms} rooms)</option>`;
+    });
+}
+
+async function loadRoomTypes(venueId) {
+    const data = await sempaGet(`OpenAPI/Rooms/CRSTypes?pVenueID=${venueId}`);
+    if(data) {
+        roomTypes[venueId] = data;
+        // populate room type filter
+        const sel = document.getElementById('filterRoomType');
+        if(sel) {
+            sel.innerHTML = '<option value="all">All Room Types</option>';
+            data.forEach(rt => {
+                sel.innerHTML += `<option value="${rt.Name}">${rt.Name}</option>`;
+            });
+        }
+    }
+}
+
+async function loadRoomCount(venueId, roomTypeId) {
+    const data = await sempaGet(`OpenAPI/Rooms/PMSRoomCount?pVenueID=${venueId}&pRoomTypeID=${roomTypeId}`);
+    if(data !== null) {
+        if(!roomCounts[venueId]) roomCounts[venueId] = {};
+        roomCounts[venueId][roomTypeId] = data;
+    }
+}
+
+async function loadAvailability(venueId, roomTypeId, startDate, endDate) {
+    const key = `${venueId}-${roomTypeId}-${startDate}`;
+    if(availabilityCache[key]) return availabilityCache[key];
+    const data = await sempaGet(`OpenAPI/Rooms/PMSAvailable?pVenueID=${venueId}&pStartDate=${startDate}&pEndDate=${endDate}&pRoomTypeID=${roomTypeId}`);
+    if(data) availabilityCache[key] = data;
+    return data || [];
+}
+
+async function loadReservations(venueId, startDate, endDate) {
+    const data = await sempaGet(`OpenAPI/Reservations/PMSReservationsInPeriod?pVenueID=${venueId}&pStartDate=${startDate}&pEndDate=${endDate}`);
+    if(data) return data;
+    return [];
+}
+
+// ============ AUTH ============
+async function handleLogin(e) {
+    e.preventDefault();
+    const u = document.getElementById('loginUser').value.trim();
+    const p = document.getElementById('loginPass').value;
+    const errEl = document.getElementById('loginError');
+    errEl.classList.add('hidden');
+    const {data, error} = await sb.from('hospitality_users').select('*').eq('username', u).eq('password', p).eq('enabled', true).single();
+    if(error || !data) {
+        errEl.textContent = 'Invalid username or password';
+        errEl.classList.remove('hidden');
+        return;
+    }
+    currentUser = data;
+    localStorage.setItem('hosp_user', JSON.stringify(data));
+    enterApp();
+}
+
+function handleLogout() {
+    localStorage.removeItem('hosp_user');
+    currentUser = null;
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('mainApp').classList.add('hidden');
+}
+
+function enterApp() {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    document.getElementById('sidebarAvatar').textContent = (currentUser.display_name||currentUser.username)[0].toUpperCase();
+    document.getElementById('sidebarName').textContent = currentUser.display_name || currentUser.username;
+    initApp();
+}
+
+// ============ INIT ============
+async function initApp() {
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    await loadVenues();
+    // Load data for all venues
+    const activeVenues = venues.length ? venues : [{VenueID:58946}];
+    for(const v of activeVenues) {
+        await loadRoomTypes(v.VenueID);
+        if(roomTypes[v.VenueID]) {
+            for(const rt of roomTypes[v.VenueID]) {
+                await loadRoomCount(v.VenueID, rt.RoomTypeID);
+            }
+        }
+    }
+    // Load reservations for next 12 months
+    const now = new Date();
+    const start = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+    const end12 = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
+    for(const v of activeVenues) {
+        const res = await loadReservations(v.VenueID, start, end12);
+        res.forEach(r => { r._venueId = v.VenueID; });
+        reservations = reservations.concat(res);
+    }
+    // Load budgets
+    const {data: bData} = await sb.from('hospitality_budgets').select('*');
+    if(bData) budgets = bData;
+
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    showPage('dashboard');
+    setRefreshInterval();
+}
+
+async function refreshData() {
+    availabilityCache = {};
+    reservations = [];
+    const activeVenues = venues.length ? venues : [{VenueID:58946}];
+    const now = new Date();
+    const start = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+    const end12 = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
+    for(const v of activeVenues) {
+        const res = await loadReservations(v.VenueID, start, end12);
+        res.forEach(r => { r._venueId = v.VenueID; });
+        reservations = reservations.concat(res);
+    }
+    const {data: bData} = await sb.from('hospitality_budgets').select('*');
+    if(bData) budgets = bData;
+    renderCurrentPage();
+}
+
+function setRefreshInterval() {
+    if(refreshTimer) clearInterval(refreshTimer);
+    const mins = parseInt(document.getElementById('refreshInterval')?.value || '5');
+    if(mins > 0) refreshTimer = setInterval(refreshData, mins * 60000);
+}
+
+function onVenueChange() {
+    selectedVenueId = document.getElementById('venueSelector').value;
+    renderCurrentPage();
+}
+
+// ============ NAVIGATION ============
+let currentPage = 'dashboard';
+function showPage(page) {
+    currentPage = page;
+    document.querySelectorAll('[id^="page-"]').forEach(el => el.classList.add('hidden'));
+    const pageEl = document.getElementById('page-' + page);
+    if(pageEl) { pageEl.classList.remove('hidden'); pageEl.classList.add('fade-in'); }
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+    const titles = {dashboard:'Dashboard',occupancy:'Occupancy Calendar',reservations:'Reservations',gaps:'Gap Analysis',budget:'Budget vs Actual',settings:'Settings'};
+    document.getElementById('pageTitle').textContent = titles[page] || page;
+    renderCurrentPage();
+}
+
+function renderCurrentPage() {
+    const p = currentPage;
+    if(p==='dashboard') renderDashboard();
+    else if(p==='occupancy') renderOccupancy();
+    else if(p==='reservations') renderReservations();
+    else if(p==='gaps') renderGaps();
+    else if(p==='budget') renderBudget();
+    else if(p==='settings') renderSettings();
+}
+
+// ============ FILTERED DATA ============
+function getFilteredReservations() {
+    let res = reservations;
+    if(selectedVenueId !== 'all') res = res.filter(r => String(r._venueId) === selectedVenueId);
+    return res;
+}
+
+function getActiveReservations() {
+    return getFilteredReservations().filter(r => r.Status !== 'Cancelled');
+}
+
+function getTotalRooms() {
+    let total = 0;
+    const vids = selectedVenueId === 'all' ? Object.keys(roomCounts) : [selectedVenueId];
+    vids.forEach(vid => {
+        if(roomCounts[vid]) {
+            Object.values(roomCounts[vid]).forEach(c => { total += (typeof c === 'number' ? c : 0); });
+        }
+    });
+    // fallback: use venue Rooms count
+    if(total === 0) {
+        const vs = selectedVenueId === 'all' ? venues : venues.filter(v => String(v.VenueID) === selectedVenueId);
+        vs.forEach(v => total += v.Rooms || 0);
+    }
+    return total;
+}
+
+// ============ DASHBOARD ============
+function renderDashboard() {
+    const now = new Date();
+    const todayStr = toYMD(now);
+    const active = getActiveReservations();
+    const totalRooms = getTotalRooms();
+
+    // Occupied tonight: reservations where checkin <= today < checkout and active
+    const occupiedTonight = active.filter(r => {
+        const ci = r.CheckInDate?.split('T')[0];
+        const co = r.CheckOutDate?.split('T')[0];
+        return ci <= todayStr && co > todayStr;
+    });
+
+    const arrivalsToday = active.filter(r => r.CheckInDate?.split('T')[0] === todayStr);
+    const departuresToday = active.filter(r => r.CheckOutDate?.split('T')[0] === todayStr);
+
+    const occCount = occupiedTonight.length;
+    const occPct = totalRooms > 0 ? Math.round((occCount / totalRooms) * 100) : 0;
+
+    document.getElementById('statTotalRooms').textContent = totalRooms;
+    document.getElementById('statOccupied').textContent = occCount;
+    document.getElementById('statOccPct').textContent = occPct + '%';
+    document.getElementById('statArrivals').textContent = arrivalsToday.length;
+    document.getElementById('statDepartures').textContent = departuresToday.length;
+
+    // 12-month occupancy chart
+    render12MonthChart(active, totalRooms);
+
+    // Upcoming arrivals (next 7 days)
+    const in7 = toYMD(new Date(now.getTime() + 7*86400000));
+    const upcoming = active.filter(r => {
+        const ci = r.CheckInDate?.split('T')[0];
+        return ci >= todayStr && ci <= in7;
+    }).sort((a,b) => a.CheckInDate.localeCompare(b.CheckInDate));
+
+    const container = document.getElementById('upcomingArrivals');
+    if(upcoming.length === 0) {
+        container.innerHTML = '<div class="text-xs text-slate-500 text-center py-8">No arrivals in the next 7 days</div>';
+    } else {
+        container.innerHTML = upcoming.map(r => `
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition cursor-pointer" onclick="showResDetail(${r.ReservationID})">
+                <div class="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-300">${guestName(r)[0]}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-medium text-white truncate">${guestName(r)}</div>
+                    <div class="text-[10px] text-slate-400">${r.RoomType?.Name||'—'} · ${fmtShort(r.CheckInDate)}</div>
+                </div>
+                ${statusBadge(r.Status)}
+            </div>
+        `).join('');
+    }
+}
+
+function render12MonthChart(active, totalRooms) {
+    const now = new Date();
+    const labels = [];
+    const confirmed = [];
+    const provisional = [];
+
+    for(let i = 0; i < 12; i++) {
+        const y = new Date(now.getFullYear(), now.getMonth()+i, 1).getFullYear();
+        const m = new Date(now.getFullYear(), now.getMonth()+i, 1).getMonth()+1;
+        labels.push(monthLabel(y, m));
+        const days = daysInMonth(y, m);
+        const totalRoomNights = totalRooms * days;
+
+        let confNights = 0, provNights = 0;
+        active.forEach(r => {
+            const ci = new Date(r.CheckInDate);
+            const co = new Date(r.CheckOutDate);
+            const mStart = new Date(y, m-1, 1);
+            const mEnd = new Date(y, m, 0);
+            const overlapStart = ci > mStart ? ci : mStart;
+            const overlapEnd = co < mEnd ? co : new Date(mEnd.getTime() + 86400000);
+            const nights = Math.max(0, Math.ceil((overlapEnd - overlapStart) / 86400000));
+            if(nights > 0) {
+                if(r.Status === 'Confirmed' || r.Status === 'In House' || r.Status === 'Checked Out') confNights += nights;
+                else if(r.Status === 'Provisional') provNights += nights;
+            }
+        });
+
+        const confPct = totalRoomNights > 0 ? Math.round((confNights/totalRoomNights)*100) : 0;
+        const provPct = totalRoomNights > 0 ? Math.round((provNights/totalRoomNights)*100) : 0;
+        confirmed.push(Math.min(confPct, 100));
+        provisional.push(Math.min(provPct, 100));
+    }
+
+    if(occChart) occChart.destroy();
+    const ctx = document.getElementById('occupancyChart').getContext('2d');
+    occChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {label:'Confirmed', data:confirmed, backgroundColor:'rgba(16,185,129,0.6)', borderRadius:4, barPercentage:0.7},
+                {label:'Provisional', data:provisional, backgroundColor:'rgba(245,158,11,0.5)', borderRadius:4, barPercentage:0.7}
+            ]
+        },
+        options: {
+            responsive:true, maintainAspectRatio:false,
+            plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+            scales:{
+                x:{stacked:true, ticks:{color:'#64748b',font:{size:10}}, grid:{display:false}},
+                y:{stacked:true, max:100, ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'}, grid:{color:'rgba(255,255,255,0.04)'}}
+            }
+        }
+    });
+}
+
+// ============ OCCUPANCY CALENDAR ============
+async function renderOccupancy() {
+    const now = new Date();
+    const grid = document.getElementById('occCalendarGrid');
+    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||58946];
+    const allRoomTypes = [];
+    vids.forEach(vid => {
+        (roomTypes[vid]||[]).forEach(rt => {
+            if(!allRoomTypes.find(x => x.RoomTypeID === rt.RoomTypeID)) allRoomTypes.push({...rt, venueId: vid});
+        });
+    });
+
+    // Build month headers
+    const months = [];
+    for(let i=0;i<12;i++){
+        const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+        months.push({y:d.getFullYear(), m:d.getMonth()+1, label:monthLabel(d.getFullYear(),d.getMonth()+1)});
+    }
+
+    const active = getActiveReservations();
+
+    let html = '<table style="border-collapse:separate;border-spacing:4px"><thead><tr><th style="text-align:left;color:#94a3b8;font-size:11px;padding:8px 12px;min-width:180px">Room Type</th>';
+    months.forEach(mo => { html += `<th style="text-align:center;color:#94a3b8;font-size:10px;padding:4px 2px">${mo.label}</th>`; });
+    html += '</tr></thead><tbody>';
+
+    for(const rt of allRoomTypes) {
+        html += `<tr><td style="color:#e2e8f0;font-size:12px;font-weight:500;padding:4px 12px;white-space:nowrap">${rt.Name}</td>`;
+        for(const mo of months) {
+            const days = daysInMonth(mo.y, mo.m);
+            const totalForType = roomCounts[rt.venueId]?.[rt.RoomTypeID] || 0;
+            const totalNights = totalForType * days;
+
+            // Count reservation nights in this month for this room type
+            let occNights = 0;
+            let confNights = 0, provNights = 0;
+            active.forEach(r => {
+                if(r.RoomType?.ProductTypeID !== rt.RoomTypeID) return;
+                const ci = new Date(r.CheckInDate);
+                const co = new Date(r.CheckOutDate);
+                const mStart = new Date(mo.y, mo.m-1, 1);
+                const mEnd = new Date(mo.y, mo.m, 0);
+                const overlapStart = ci > mStart ? ci : mStart;
+                const overlapEnd = co < mEnd ? co : new Date(mEnd.getTime()+86400000);
+                const nights = Math.max(0, Math.ceil((overlapEnd - overlapStart)/86400000));
+                if(nights > 0) {
+                    occNights += nights;
+                    if(r.Status==='Confirmed'||r.Status==='In House'||r.Status==='Checked Out') confNights += nights;
+                    else provNights += nights;
+                }
+            });
+
+            const pct = totalNights > 0 ? Math.round((occNights/totalNights)*100) : 0;
+            const cls = pct >= 75 ? 'occ-green' : pct >= 50 ? 'occ-yellow' : 'occ-red';
+            const title = `${rt.Name} - ${monthLabelLong(mo.y,mo.m)}\nOccupancy: ${pct}%\nConfirmed: ${confNights} nights\nProvisional: ${provNights} nights`;
+            html += `<td><div class="occ-cell ${cls}" title="${title}" onclick="showDailyDetail(${rt.venueId},${rt.RoomTypeID},'${rt.Name}',${mo.y},${mo.m})">${pct}%</div></td>`;
+        }
+        html += '</tr>';
+    }
+
+    // Total row
+    html += `<tr><td style="color:#818cf8;font-size:12px;font-weight:600;padding:8px 12px;border-top:1px solid rgba(255,255,255,0.1)">ALL ROOMS</td>`;
+    for(const mo of months) {
+        const days = daysInMonth(mo.y, mo.m);
+        const totalRooms = getTotalRooms();
+        const totalNights = totalRooms * days;
+        let occNights = 0;
+        active.forEach(r => {
+            const ci = new Date(r.CheckInDate);
+            const co = new Date(r.CheckOutDate);
+            const mStart = new Date(mo.y, mo.m-1, 1);
+            const mEnd = new Date(mo.y, mo.m, 0);
+            const overlapStart = ci > mStart ? ci : mStart;
+            const overlapEnd = co < mEnd ? co : new Date(mEnd.getTime()+86400000);
+            const nights = Math.max(0, Math.ceil((overlapEnd - overlapStart)/86400000));
+            occNights += nights;
+        });
+        const pct = totalNights > 0 ? Math.round((occNights/totalNights)*100) : 0;
+        const cls = pct >= 75 ? 'occ-green' : pct >= 50 ? 'occ-yellow' : 'occ-red';
+        html += `<td style="border-top:1px solid rgba(255,255,255,0.1)"><div class="occ-cell ${cls}" style="font-weight:700">${pct}%</div></td>`;
+    }
+    html += '</tr></tbody></table>';
+    grid.innerHTML = html;
+}
+
+async function showDailyDetail(venueId, roomTypeId, roomTypeName, year, month) {
+    const detail = document.getElementById('occDailyDetail');
+    const title = document.getElementById('occDailyTitle');
+    const content = document.getElementById('occDailyContent');
+    detail.classList.remove('hidden');
+    title.textContent = `${roomTypeName} — ${monthLabelLong(year, month)}`;
+
+    const start = `${year}-${String(month).padStart(2,'0')}-01`;
+    const endDay = daysInMonth(year, month);
+    const end = `${year}-${String(month).padStart(2,'0')}-${String(endDay).padStart(2,'0')}`;
+
+    content.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading availability...</div>';
+    const avail = await loadAvailability(venueId, roomTypeId, start, end);
+
+    let html = '<div class="grid grid-cols-7 gap-1">';
+    // Day headers
+    ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d => {
+        html += `<div class="text-center text-[10px] text-slate-500 font-medium py-1">${d}</div>`;
+    });
+    // Pad first week
+    const firstDow = new Date(year, month-1, 1).getDay();
+    const pad = firstDow === 0 ? 6 : firstDow - 1;
+    for(let i=0;i<pad;i++) html += '<div></div>';
+
+    for(let d=1;d<=endDay;d++) {
+        const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const dayData = avail.find(a => a.Date?.startsWith(dateStr));
+        const total = dayData?.Total || 0;
+        const available = dayData?.Available || 0;
+        const occupied = total - available;
+        const pct = total > 0 ? Math.round((occupied/total)*100) : 0;
+        const cls = pct === 0 ? 'heat-empty' : pct < 50 ? 'heat-empty' : pct < 100 ? 'heat-partial' : 'heat-full';
+        html += `<div class="heatmap-cell ${cls}" title="${dateStr}\n${occupied}/${total} occupied (${pct}%)\n${available} available" style="width:auto;height:auto;padding:6px 4px"><div class="text-[10px] font-medium">${d}</div><div class="text-[9px] opacity-70">${pct}%</div></div>`;
+    }
+    html += '</div>';
+
+    // Show reservation list for this month/room type
+    const active = getActiveReservations().filter(r =>
+        r.RoomType?.ProductTypeID === roomTypeId &&
+        r.CheckInDate?.substring(0,7) <= `${year}-${String(month).padStart(2,'0')}` &&
+        r.CheckOutDate?.substring(0,7) >= `${year}-${String(month).padStart(2,'0')}`
+    );
+    if(active.length) {
+        html += '<div class="mt-4 border-t border-white/5 pt-4"><h4 class="text-xs font-semibold text-slate-300 mb-2">Reservations this month</h4>';
+        active.forEach(r => {
+            html += `<div class="flex items-center gap-3 p-2 rounded bg-slate-800/50 mb-1 text-xs"><span class="text-white font-medium">${guestName(r)}</span><span class="text-slate-400">${fmtShort(r.CheckInDate)} → ${fmtShort(r.CheckOutDate)}</span>${statusBadge(r.Status)}<span class="text-slate-500">Room ${r.RoomName||'—'}</span></div>`;
+        });
+        html += '</div>';
+    }
+
+    content.innerHTML = html;
+}
+
+// ============ RESERVATIONS ============
+function renderReservations() {
+    let res = getFilteredReservations();
+    const status = document.getElementById('filterStatus').value;
+    const roomType = document.getElementById('filterRoomType').value;
+    const dateFrom = document.getElementById('filterDateFrom').value;
+    const dateTo = document.getElementById('filterDateTo').value;
+    const search = document.getElementById('filterSearch').value.toLowerCase();
+
+    if(status === 'active') res = res.filter(r => r.Status !== 'Cancelled');
+    else if(status !== 'all') res = res.filter(r => r.Status === status);
+    if(roomType !== 'all') res = res.filter(r => r.RoomType?.Name === roomType);
+    if(dateFrom) res = res.filter(r => r.CheckInDate?.split('T')[0] >= dateFrom);
+    if(dateTo) res = res.filter(r => r.CheckOutDate?.split('T')[0] <= dateTo);
+    if(search) res = res.filter(r => guestName(r).toLowerCase().includes(search) || (r.AgentName||'').toLowerCase().includes(search));
+
+    // Sort
+    const {field, dir} = resSort;
+    res.sort((a,b) => {
+        let va, vb;
+        if(field==='guest') { va=guestName(a); vb=guestName(b); }
+        else if(field==='checkin') { va=a.CheckInDate||''; vb=b.CheckInDate||''; }
+        else if(field==='checkout') { va=a.CheckOutDate||''; vb=b.CheckOutDate||''; }
+        else if(field==='roomtype') { va=a.RoomType?.Name||''; vb=b.RoomType?.Name||''; }
+        else if(field==='status') { va=a.Status||''; vb=b.Status||''; }
+        else if(field==='agent') { va=a.AgentName||''; vb=b.AgentName||''; }
+        else if(field==='created') { va=a.CreatedDate||''; vb=b.CreatedDate||''; }
+        else { va=''; vb=''; }
+        return va < vb ? -dir : va > vb ? dir : 0;
+    });
+
+    const tbody = document.getElementById('resTableBody');
+    tbody.innerHTML = res.map(r => `
+        <tr onclick="showResDetail(${r.ReservationID})" style="cursor:pointer">
+            <td class="font-medium text-white">${guestName(r)}</td>
+            <td>${fmtDate(r.CheckInDate)}</td>
+            <td>${fmtDate(r.CheckOutDate)}</td>
+            <td>${r.RoomType?.Name||'—'}</td>
+            <td>${statusBadge(r.Status)}</td>
+            <td class="text-slate-400">${r.AgentName||'—'}</td>
+            <td class="text-slate-400">${fmtDate(r.CreatedDate)}</td>
+        </tr>
+    `).join('');
+    document.getElementById('resCount').textContent = `Showing ${res.length} reservation${res.length!==1?'s':''}`;
+}
+
+function sortRes(field) {
+    if(resSort.field === field) resSort.dir *= -1;
+    else { resSort.field = field; resSort.dir = 1; }
+    renderReservations();
+}
+
+function showResDetail(resId) {
+    const r = reservations.find(x => x.ReservationID === resId);
+    if(!r) return;
+    const modal = document.getElementById('resDetailModal');
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+    const g = r.Guests?.[0] || {};
+    document.getElementById('resDetailContent').innerHTML = `
+        <div class="space-y-3">
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Reservation ID</span><span class="text-sm font-mono text-white">#${r.ReservationID}</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Status</span>${statusBadge(r.Status)}</div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Guest</span><span class="text-sm text-white">${g.Firstname||''} ${g.Lastname||''}</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Email</span><span class="text-sm text-slate-300">${g.Email||'—'}</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Phone</span><span class="text-sm text-slate-300">${g.Phone||'—'}</span></div>
+            <div class="border-t border-white/5 my-2"></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Check-in</span><span class="text-sm text-white">${fmtDate(r.CheckInDate)}</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Check-out</span><span class="text-sm text-white">${fmtDate(r.CheckOutDate)}</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Room Type</span><span class="text-sm text-white">${r.RoomType?.Name||'—'}</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Room</span><span class="text-sm text-white">${r.RoomName||'—'}</span></div>
+            <div class="border-t border-white/5 my-2"></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Agent</span><span class="text-sm text-slate-300">${r.AgentName||'—'} (ID: ${r.AgentID||'—'})</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs text-slate-400">Created</span><span class="text-sm text-slate-300">${fmtDate(r.CreatedDate)}</span></div>
+        </div>
+    `;
+}
+
+function closeResDetail() {
+    const modal = document.getElementById('resDetailModal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+}
+
+// ============ GAP ANALYSIS ============
+async function renderGaps() {
+    const now = new Date();
+    const totalRooms = getTotalRooms();
+    const active = getActiveReservations();
+    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||58946];
+    const allRT = [];
+    vids.forEach(vid => { (roomTypes[vid]||[]).forEach(rt => { if(!allRT.find(x=>x.RoomTypeID===rt.RoomTypeID)) allRT.push({...rt,venueId:vid}); }); });
+
+    // 3 months of data
+    const months3 = [];
+    for(let i=0;i<3;i++){
+        const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+        months3.push({y:d.getFullYear(), m:d.getMonth()+1});
+    }
+
+    let totalGapNights = 0;
+    let totalRoomNights = 0;
+    let totalOccNights = 0;
+    const monthStats = [];
+
+    // Heatmap data per room type
+    let heatmapHtml = '';
+    for(const rt of allRT) {
+        heatmapHtml += `<div class="mb-6"><div class="text-xs font-semibold text-slate-300 mb-2">${rt.Name}</div><div class="flex flex-wrap gap-0.5">`;
+        for(const mo of months3) {
+            const days = daysInMonth(mo.y, mo.m);
+            const start = `${mo.y}-${String(mo.m).padStart(2,'0')}-01`;
+            const end = `${mo.y}-${String(mo.m).padStart(2,'0')}-${String(days).padStart(2,'0')}`;
+            const avail = await loadAvailability(rt.venueId, rt.RoomTypeID, start, end);
+
+            // Month label
+            heatmapHtml += `<div style="width:26px;text-align:center;margin:1px" class="text-[8px] text-slate-500 font-medium">${monthLabel(mo.y,mo.m)}</div>`;
+
+            for(let d=1;d<=days;d++) {
+                const dateStr = `${mo.y}-${String(mo.m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dayData = avail.find(a => a.Date?.startsWith(dateStr));
+                const total = dayData?.Total || 0;
+                const available = dayData?.Available || total;
+                const occupied = total - available;
+                const pct = total > 0 ? Math.round((occupied/total)*100) : 0;
+                const cls = total === 0 ? 'heat-none' : pct === 0 ? 'heat-empty' : pct < 75 ? 'heat-partial' : 'heat-full';
+
+                if(total > 0) {
+                    totalRoomNights += total;
+                    totalOccNights += occupied;
+                    totalGapNights += available;
+                }
+
+                heatmapHtml += `<div class="heatmap-cell ${cls}" title="${dateStr}: ${available} available / ${total} total">${d}</div>`;
+            }
+        }
+        heatmapHtml += '</div></div>';
+    }
+
+    // Calculate month-level stats
+    for(const mo of months3) {
+        const days = daysInMonth(mo.y, mo.m);
+        const mTotalNights = totalRooms * days;
+        let mOcc = 0;
+        active.forEach(r => {
+            const ci = new Date(r.CheckInDate);
+            const co = new Date(r.CheckOutDate);
+            const mStart = new Date(mo.y, mo.m-1, 1);
+            const mEnd = new Date(mo.y, mo.m, 0);
+            const overlapStart = ci > mStart ? ci : mStart;
+            const overlapEnd = co < mEnd ? co : new Date(mEnd.getTime()+86400000);
+            const nights = Math.max(0, Math.ceil((overlapEnd-overlapStart)/86400000));
+            mOcc += nights;
+        });
+        const pct = mTotalNights > 0 ? Math.round((mOcc/mTotalNights)*100) : 0;
+        monthStats.push({label: monthLabelLong(mo.y, mo.m), pct, gap: mTotalNights - mOcc});
+    }
+
+    // Stats
+    const avgOcc = totalRoomNights > 0 ? Math.round((totalOccNights/totalRoomNights)*100) : 0;
+    document.getElementById('gapTotal').textContent = totalGapNights.toLocaleString();
+    document.getElementById('gapAvgOcc').textContent = avgOcc + '%';
+
+    const worst = monthStats.reduce((a,b) => a.pct < b.pct ? a : b, monthStats[0] || {label:'—',pct:0});
+    const best = monthStats.reduce((a,b) => a.pct > b.pct ? a : b, monthStats[0] || {label:'—',pct:0});
+    document.getElementById('gapWorstMonth').textContent = `${worst.label} (${worst.pct}%)`;
+    document.getElementById('gapBestMonth').textContent = `${best.label} (${best.pct}%)`;
+
+    document.getElementById('gapHeatmap').innerHTML = heatmapHtml;
+
+    // Gap details
+    let detailHtml = '<div class="space-y-4">';
+    monthStats.forEach(ms => {
+        const barPct = ms.pct;
+        const barCls = barPct < 50 ? 'bg-red-500' : barPct < 75 ? 'bg-amber-500' : 'bg-emerald-500';
+        detailHtml += `<div>
+            <div class="flex items-center justify-between mb-1"><span class="text-xs font-medium text-white">${ms.label}</span><span class="text-xs text-slate-400">${ms.pct}% occupied · ${ms.gap} gap nights</span></div>
+            <div class="w-full h-2 bg-slate-700 rounded-full overflow-hidden"><div class="${barCls} h-full rounded-full" style="width:${barPct}%"></div></div>
+        </div>`;
+    });
+    detailHtml += '</div>';
+    document.getElementById('gapDetails').innerHTML = detailHtml;
+}
+
+// ============ BUDGET VS ACTUAL ============
+function renderBudget() {
+    const now = new Date();
+    const active = getActiveReservations();
+    const totalRooms = getTotalRooms();
+    const venueId = selectedVenueId === 'all' ? (venues[0]?.VenueID || 58946) : parseInt(selectedVenueId);
+
+    // Budget year selector
+    const yearSel = document.getElementById('budgetYear');
+    if(yearSel && yearSel.options.length < 2) {
+        yearSel.innerHTML = '';
+        [now.getFullYear(), now.getFullYear()+1].forEach(y => {
+            yearSel.innerHTML += `<option value="${y}">${y}</option>`;
+        });
+    }
+
+    const months12 = [];
+    for(let i=0;i<12;i++){
+        const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+        months12.push({y:d.getFullYear(), m:d.getMonth()+1});
+    }
+
+    const labels = [];
+    const budgetData = [];
+    const actualData = [];
+    const rows = [];
+
+    months12.forEach(mo => {
+        labels.push(monthLabel(mo.y, mo.m));
+        const days = daysInMonth(mo.y, mo.m);
+        const totalNights = totalRooms * days;
+
+        // Actual
+        let occNights = 0;
+        active.forEach(r => {
+            const ci = new Date(r.CheckInDate);
+            const co = new Date(r.CheckOutDate);
+            const mStart = new Date(mo.y, mo.m-1, 1);
+            const mEnd = new Date(mo.y, mo.m, 0);
+            const overlapStart = ci > mStart ? ci : mStart;
+            const overlapEnd = co < mEnd ? co : new Date(mEnd.getTime()+86400000);
+            const nights = Math.max(0, Math.ceil((overlapEnd-overlapStart)/86400000));
+            occNights += nights;
+        });
+        const actualPct = totalNights > 0 ? Math.round((occNights/totalNights)*100) : 0;
+        actualData.push(actualPct);
+
+        // Budget
+        const b = budgets.find(x => x.venue_id === venueId && x.year === mo.y && x.month === mo.m);
+        const bPct = b ? parseFloat(b.target_occupancy_pct) : 0;
+        budgetData.push(bPct);
+
+        const variance = actualPct - bPct;
+        rows.push({
+            label: monthLabelLong(mo.y, mo.m),
+            bPct, actualPct, variance,
+            bADR: b ? parseFloat(b.target_adr||0) : 0,
+            bRev: b ? parseFloat(b.target_revenue||0) : 0,
+            y: mo.y, m: mo.m
+        });
+    });
+
+    // Chart
+    if(budgetChart) budgetChart.destroy();
+    const ctx = document.getElementById('budgetChart').getContext('2d');
+    budgetChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {label:'Budget', data:budgetData, borderColor:'#818cf8', backgroundColor:'rgba(129,140,248,0.1)', tension:0.3, fill:true, pointRadius:4, pointBackgroundColor:'#818cf8'},
+                {label:'Actual', data:actualData, borderColor:'#34d399', backgroundColor:'rgba(52,211,153,0.1)', tension:0.3, fill:true, pointRadius:4, pointBackgroundColor:'#34d399'}
+            ]
+        },
+        options: {
+            responsive:true, maintainAspectRatio:false,
+            plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+            scales:{
+                x:{ticks:{color:'#64748b',font:{size:10}}, grid:{display:false}},
+                y:{max:100, ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'}, grid:{color:'rgba(255,255,255,0.04)'}}
+            }
+        }
+    });
+
+    // Table
+    const tbody = document.getElementById('budgetTableBody');
+    tbody.innerHTML = rows.map(r => {
+        const varColor = r.variance > 0 ? 'text-emerald-400' : r.variance < 0 ? 'text-red-400' : 'text-slate-400';
+        const varText = r.variance > 0 ? '+'+r.variance+'%' : r.variance+'%';
+        return `<tr>
+            <td class="text-white font-medium">${r.label}</td>
+            <td>${r.bPct ? r.bPct+'%' : '<span class="text-slate-500">—</span>'}</td>
+            <td>${r.actualPct}%</td>
+            <td class="${varColor} font-medium">${r.bPct ? varText : '—'}</td>
+            <td>${r.bADR ? 'R'+r.bADR.toLocaleString() : '<span class="text-slate-500">—</span>'}</td>
+            <td>${r.bRev ? 'R'+r.bRev.toLocaleString() : '<span class="text-slate-500">—</span>'}</td>
+            <td><button onclick="editBudget(${r.y},${r.m})" class="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer">Edit</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function showBudgetForm() {
+    document.getElementById('budgetFormCard').classList.remove('hidden');
+}
+
+function editBudget(y, m) {
+    document.getElementById('budgetYear').value = y;
+    document.getElementById('budgetMonth').value = m;
+    const venueId = selectedVenueId === 'all' ? (venues[0]?.VenueID || 58946) : parseInt(selectedVenueId);
+    const b = budgets.find(x => x.venue_id === venueId && x.year === y && x.month === m);
+    if(b) {
+        document.getElementById('budgetOcc').value = b.target_occupancy_pct || '';
+        document.getElementById('budgetADR').value = b.target_adr || '';
+        document.getElementById('budgetRevenue').value = b.target_revenue || '';
+        document.getElementById('budgetNotes').value = b.notes || '';
+    }
+    showBudgetForm();
+}
+
+async function saveBudget() {
+    const venueId = selectedVenueId === 'all' ? (venues[0]?.VenueID || 58946) : parseInt(selectedVenueId);
+    const y = parseInt(document.getElementById('budgetYear').value);
+    const m = parseInt(document.getElementById('budgetMonth').value);
+    const occ = parseFloat(document.getElementById('budgetOcc').value) || null;
+    const adr = parseFloat(document.getElementById('budgetADR').value) || null;
+    const rev = parseFloat(document.getElementById('budgetRevenue').value) || null;
+    const notes = document.getElementById('budgetNotes').value || null;
+
+    const {data, error} = await sb.from('hospitality_budgets').upsert({
+        venue_id: venueId, year: y, month: m,
+        target_occupancy_pct: occ, target_adr: adr, target_revenue: rev, notes,
+        updated_at: new Date().toISOString()
+    }, {onConflict: 'venue_id,year,month'});
+
+    if(error) { alert('Error saving budget: ' + error.message); return; }
+
+    // Refresh budgets
+    const {data: bData} = await sb.from('hospitality_budgets').select('*');
+    if(bData) budgets = bData;
+    document.getElementById('budgetFormCard').classList.add('hidden');
+    renderBudget();
+}
+
+// ============ SETTINGS ============
+function renderSettings() {
+    // Venues
+    const vc = document.getElementById('venueConfig');
+    if(venues.length === 0) {
+        vc.innerHTML = '<div class="text-xs text-slate-500">No venues loaded</div>';
+    } else {
+        vc.innerHTML = venues.map(v => `
+            <div class="p-4 rounded-lg bg-slate-800/50 mb-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-semibold text-white">${v.Name}</span>
+                    <span class="badge badge-blue">${v.Rooms} rooms</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                    <div>ID: ${v.VenueID}</div>
+                    <div>Type: ${v.VenueType||'—'}</div>
+                    <div>City: ${v.PhysicalCity||'—'}</div>
+                    <div>Province: ${v.PhysicalProv||'—'}</div>
+                </div>
+                ${roomTypes[v.VenueID] ? `<div class="mt-2 pt-2 border-t border-white/5"><div class="text-[10px] text-slate-500 uppercase font-medium mb-1">Room Types</div>${roomTypes[v.VenueID].map(rt=>`<span class="inline-block text-[10px] bg-indigo-500/10 text-indigo-300 px-2 py-0.5 rounded mr-1 mb-1">${rt.Name} (${rt.MaxPax} pax)</span>`).join('')}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    // Users
+    loadUsers();
+}
+
+async function loadUsers() {
+    const {data} = await sb.from('hospitality_users').select('*');
+    const ul = document.getElementById('userList');
+    if(!data || !data.length) { ul.innerHTML = '<div class="text-xs text-slate-500">No users</div>'; return; }
+    ul.innerHTML = data.map(u => `
+        <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800/50">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background:${u.color||'#6366f1'}33;color:${u.color||'#6366f1'}">${(u.display_name||u.username)[0].toUpperCase()}</div>
+            <div class="flex-1"><div class="text-xs font-medium text-white">${u.display_name||u.username}</div><div class="text-[10px] text-slate-400">@${u.username} ${u.is_admin?'· Admin':''}</div></div>
+            <span class="badge ${u.enabled?'badge-green':'badge-red'}">${u.enabled?'Active':'Disabled'}</span>
+        </div>
+    `).join('');
+}
+
+async function addUser() {
+    const username = document.getElementById('newUsername').value.trim();
+    const displayName = document.getElementById('newDisplayName').value.trim();
+    const password = document.getElementById('newPassword').value;
+    if(!username || !password) { alert('Username and password required'); return; }
+    const {error} = await sb.from('hospitality_users').insert({username, display_name: displayName||username, password, enabled: true});
+    if(error) { alert('Error: ' + error.message); return; }
+    document.getElementById('newUsername').value = '';
+    document.getElementById('newDisplayName').value = '';
+    document.getElementById('newPassword').value = '';
+    loadUsers();
+}
+
+// ============ BOOT ============
+document.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('hosp_user');
+    if(saved) {
+        try { currentUser = JSON.parse(saved); enterApp(); } catch(e) {}
+    }
+});
+
+// Close modal on backdrop click
+document.getElementById('resDetailModal')?.addEventListener('click', (e) => {
+    if(e.target.id === 'resDetailModal') closeResDetail();
+});
+</script>
+</body>
+</html>
