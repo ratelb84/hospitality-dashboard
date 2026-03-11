@@ -333,10 +333,19 @@ async function loadRoomTypes(venueId) {
 }
 
 async function loadRoomCount(venueId, roomTypeId) {
-    const data = await sempaGet(`OpenAPI/Rooms/PMSRoomCount?pVenueID=${venueId}&pRoomTypeID=${roomTypeId}`);
-    if(data !== null) {
+    // Use PMSAvailable for 1 day to get accurate Total room count (PMSRoomCount can be wrong in test data)
+    const today = toYMD(new Date());
+    const data = await sempaGet(`OpenAPI/Rooms/PMSAvailable?pVenueID=${venueId}&pStartDate=${today}&pEndDate=${today}&pRoomTypeID=${roomTypeId}`);
+    if(data && data.length > 0) {
         if(!roomCounts[venueId]) roomCounts[venueId] = {};
-        roomCounts[venueId][roomTypeId] = data;
+        roomCounts[venueId][roomTypeId] = data[0].Total;
+    } else {
+        // Fallback to PMSRoomCount
+        const countData = await sempaGet(`OpenAPI/Rooms/PMSRoomCount?pVenueID=${venueId}&pRoomTypeID=${roomTypeId}`);
+        if(countData !== null) {
+            if(!roomCounts[venueId]) roomCounts[venueId] = {};
+            roomCounts[venueId][roomTypeId] = countData.TotalRooms || 0;
+        }
     }
 }
 
@@ -483,48 +492,56 @@ function getActiveReservations() {
 
 function getTotalRooms() {
     let total = 0;
-    const vids = selectedVenueId === 'all' ? Object.keys(roomCounts) : [selectedVenueId];
+    const vids = selectedVenueId === 'all' ? Object.keys(roomCounts) : [String(selectedVenueId)];
     vids.forEach(vid => {
         if(roomCounts[vid]) {
-            Object.values(roomCounts[vid]).forEach(c => { total += (typeof c === 'number' ? c : 0); });
+            Object.values(roomCounts[vid]).forEach(c => {
+                total += (typeof c === 'number' ? c : (c && c.Total ? c.Total : 0));
+            });
         }
     });
-    // fallback: use venue Rooms count
+    // fallback: use venue Rooms count from API
     if(total === 0) {
-        const vs = selectedVenueId === 'all' ? venues : venues.filter(v => String(v.VenueID) === selectedVenueId);
+        const vs = selectedVenueId === 'all' ? venues : venues.filter(v => String(v.VenueID) === String(selectedVenueId));
         vs.forEach(v => total += v.Rooms || 0);
     }
     return total;
 }
 
 // ============ DASHBOARD ============
-function renderDashboard() {
+async function renderDashboard() {
     const now = new Date();
     const todayStr = toYMD(now);
     const active = getActiveReservations();
-    const totalRooms = getTotalRooms();
 
-    // Occupied tonight: reservations where checkin <= today < checkout and active
-    const occupiedTonight = active.filter(r => {
-        const ci = r.CheckInDate?.split('T')[0];
-        const co = r.CheckOutDate?.split('T')[0];
-        return ci <= todayStr && co > todayStr;
-    });
+    // Calculate occupancy from PMSAvailable (accurate source of truth)
+    let totalAvail = 0, totalCapacity = 0;
+    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||58946];
+    for(const vid of vids) {
+        const rts = roomTypes[vid] || [];
+        for(const rt of rts) {
+            const avail = await loadAvailability(vid, rt.RoomTypeID, todayStr, todayStr);
+            if(avail && avail.length > 0) {
+                totalAvail += avail[0].Available;
+                totalCapacity += avail[0].Total;
+            }
+        }
+    }
+    const totalRooms = totalCapacity || getTotalRooms();
+    const occupied = totalCapacity - totalAvail;
+    const occPct = totalCapacity > 0 ? Math.round((occupied / totalCapacity) * 100) : 0;
 
     const arrivalsToday = active.filter(r => r.CheckInDate?.split('T')[0] === todayStr);
     const departuresToday = active.filter(r => r.CheckOutDate?.split('T')[0] === todayStr);
 
-    const occCount = occupiedTonight.length;
-    const occPct = totalRooms > 0 ? Math.round((occCount / totalRooms) * 100) : 0;
-
     document.getElementById('statTotalRooms').textContent = totalRooms;
-    document.getElementById('statOccupied').textContent = occCount;
+    document.getElementById('statOccupied').textContent = occupied;
     document.getElementById('statOccPct').textContent = occPct + '%';
     document.getElementById('statArrivals').textContent = arrivalsToday.length;
     document.getElementById('statDepartures').textContent = departuresToday.length;
 
-    // 12-month occupancy chart
-    render12MonthChart(active, totalRooms);
+    // 12-month occupancy chart (uses availability API for accuracy)
+    await render12MonthChart(active, totalRooms);
 
     // Upcoming arrivals (next 7 days)
     const in7 = toYMD(new Date(now.getTime() + 7*86400000));
@@ -550,27 +567,45 @@ function renderDashboard() {
     }
 }
 
-function render12MonthChart(active, totalRooms) {
+async function render12MonthChart(active, totalRooms) {
     const now = new Date();
     const labels = [];
     const confirmed = [];
     const provisional = [];
+    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||58946];
 
     for(let i = 0; i < 12; i++) {
         const y = new Date(now.getFullYear(), now.getMonth()+i, 1).getFullYear();
         const m = new Date(now.getFullYear(), now.getMonth()+i, 1).getMonth()+1;
         labels.push(monthLabel(y, m));
         const days = daysInMonth(y, m);
-        const totalRoomNights = totalRooms * days;
+        const mStart = `${y}-${String(m).padStart(2,'0')}-01`;
+        const mEnd = `${y}-${String(m).padStart(2,'0')}-${String(days).padStart(2,'0')}`;
 
+        // Get availability from API for accurate occupancy
+        let monthTotalNights = 0, monthOccupiedNights = 0;
+        for(const vid of vids) {
+            const rts = roomTypes[vid] || [];
+            for(const rt of rts) {
+                const avail = await loadAvailability(vid, rt.RoomTypeID, mStart, mEnd);
+                if(avail) {
+                    avail.forEach(day => {
+                        monthTotalNights += day.Total;
+                        monthOccupiedNights += (day.Total - day.Available);
+                    });
+                }
+            }
+        }
+
+        // Split occupied into confirmed vs provisional using reservation data
         let confNights = 0, provNights = 0;
         active.forEach(r => {
             const ci = new Date(r.CheckInDate);
             const co = new Date(r.CheckOutDate);
-            const mStart = new Date(y, m-1, 1);
-            const mEnd = new Date(y, m, 0);
-            const overlapStart = ci > mStart ? ci : mStart;
-            const overlapEnd = co < mEnd ? co : new Date(mEnd.getTime() + 86400000);
+            const monthStart = new Date(y, m-1, 1);
+            const monthEnd = new Date(y, m, 0);
+            const overlapStart = ci > monthStart ? ci : monthStart;
+            const overlapEnd = co < monthEnd ? co : new Date(monthEnd.getTime() + 86400000);
             const nights = Math.max(0, Math.ceil((overlapEnd - overlapStart) / 86400000));
             if(nights > 0) {
                 if(r.Status === 'Confirmed' || r.Status === 'In House' || r.Status === 'Checked Out') confNights += nights;
@@ -578,10 +613,21 @@ function render12MonthChart(active, totalRooms) {
             }
         });
 
-        const confPct = totalRoomNights > 0 ? Math.round((confNights/totalRoomNights)*100) : 0;
-        const provPct = totalRoomNights > 0 ? Math.round((provNights/totalRoomNights)*100) : 0;
-        confirmed.push(Math.min(confPct, 100));
-        provisional.push(Math.min(provPct, 100));
+        // Use availability-based total occupancy, split proportionally into conf/prov
+        const totalResNights = confNights + provNights;
+        if(monthTotalNights > 0 && totalResNights > 0) {
+            const confRatio = confNights / totalResNights;
+            const provRatio = provNights / totalResNights;
+            const occPct = Math.round((monthOccupiedNights / monthTotalNights) * 100);
+            confirmed.push(Math.min(Math.round(occPct * confRatio), 100));
+            provisional.push(Math.min(Math.round(occPct * provRatio), 100));
+        } else if(monthTotalNights > 0) {
+            confirmed.push(Math.round((monthOccupiedNights / monthTotalNights) * 100));
+            provisional.push(0);
+        } else {
+            confirmed.push(0);
+            provisional.push(0);
+        }
     }
 
     if(occChart) occChart.destroy();
