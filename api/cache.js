@@ -1,15 +1,20 @@
 // Vercel Serverless cache for Hospitality Dashboard
 // Stores/serves a 12-month reservations snapshot in Supabase (server-side with service role)
 
-const { createClient } = require('@supabase/supabase-js');
-
-function getSupabase() {
+function supabaseConfig() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-  }
-  return createClient(url, key, { auth: { persistSession: false } });
+  if (!url || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  return { url, key };
+}
+
+function sbHeaders(key, extra = {}) {
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    ...extra,
+  };
 }
 
 module.exports = async (req, res) => {
@@ -24,18 +29,22 @@ module.exports = async (req, res) => {
   const cacheKey = `reservations_12m_v1_${venueId}`;
 
   try {
-    const sb = getSupabase();
+    const { url, key } = supabaseConfig();
 
     if (req.method === 'GET') {
-      const { data, error } = await sb
-        .from('hospitality_cache')
-        .select('cache_key, venue_id, range_start, range_end, fetched_at, payload')
-        .eq('cache_key', cacheKey)
-        .eq('venue_id', venueId)
-        .maybeSingle();
-
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ hit: !!data, record: data || null });
+      const qs = new URLSearchParams({
+        select: 'cache_key,venue_id,range_start,range_end,fetched_at,payload',
+        cache_key: `eq.${cacheKey}`,
+        venue_id: `eq.${venueId}`,
+        limit: '1',
+      });
+      const r = await fetch(`${url}/rest/v1/hospitality_cache?${qs.toString()}`, {
+        headers: sbHeaders(key),
+      });
+      if (!r.ok) return res.status(500).json({ error: await r.text() });
+      const rows = await r.json();
+      const record = rows?.[0] || null;
+      return res.status(200).json({ hit: !!record, record });
     }
 
     if (req.method === 'POST') {
@@ -49,24 +58,25 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: 'Missing payload/rangeStart/rangeEnd' });
       }
 
-      const { data, error } = await sb
-        .from('hospitality_cache')
-        .upsert(
-          {
-            cache_key: cacheKey,
-            venue_id: venueId,
-            range_start: rangeStart,
-            range_end: rangeEnd,
-            fetched_at: fetchedAt,
-            payload,
-          },
-          { onConflict: 'cache_key,venue_id' }
-        )
-        .select('cache_key, venue_id, range_start, range_end, fetched_at')
-        .single();
+      const upsertBody = {
+        cache_key: cacheKey,
+        venue_id: venueId,
+        range_start: rangeStart,
+        range_end: rangeEnd,
+        fetched_at: fetchedAt,
+        payload,
+      };
 
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ ok: true, saved: data });
+      const r = await fetch(`${url}/rest/v1/hospitality_cache`, {
+        method: 'POST',
+        headers: sbHeaders(key, {
+          Prefer: 'resolution=merge-duplicates,return=representation',
+        }),
+        body: JSON.stringify(upsertBody),
+      });
+      if (!r.ok) return res.status(500).json({ error: await r.text() });
+      const rows = await r.json();
+      return res.status(200).json({ ok: true, saved: rows?.[0] || null });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
