@@ -180,7 +180,7 @@
                     </div>
                 </div>
                 <div class="overflow-x-auto max-h-[600px] overflow-y-auto scroll-area">
-                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th>Rate</th><th>Accommodation</th><th>Deposit</th><th>Balance</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
+                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th>Rate</th><th>Accommodation</th><th>Deposit</th><th>Balance</th><th>Local Bill</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
                 </div>
                 <div class="p-4 text-xs text-slate-500" id="resCount"></div>
             </div>
@@ -1070,7 +1070,7 @@ async function showDailyDetail(venueId, roomTypeId, roomTypeName, year, month) {
 
 // ============ RESERVATIONS ============
 // Reservation financials (lazy-loaded)
-const reservationFin = {}; // ReservationID -> {rateNameId, accommodation, deposit, balance}
+const reservationFin = {}; // ReservationID -> {rateNameId, accommodation, deposit, balance, localBillBalance}
 
 function fmtMoney(v) {
     const n = Number(v||0);
@@ -1080,13 +1080,26 @@ function fmtMoney(v) {
 
 async function fetchReservationFinancial(venueId, reservationId) {
     if(reservationFin[reservationId]) return reservationFin[reservationId];
+
     const data = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${reservationId}`);
     if(!data || data.ReservationID !== reservationId) return null;
+
     const accommodation = Number(data.AccommodationTotal || 0);
     const deposit = Number(data.DepositTotal || 0);
     const balance = accommodation - deposit;
     const rateNameId = data.RateNameID ?? null;
-    const fin = { rateNameId, accommodation, deposit, balance };
+
+    // Local bill: requires guest/contact id
+    let localBillBalance = null;
+    const guestId = data?.Contacts?.[0]?.ContactID;
+    if(guestId) {
+        const bill = await sempaGet(`OpenAPI/Reservations/PMSBill?pVenueID=${venueId}&pReservationID=${reservationId}&pGuestID=${guestId}`);
+        if(bill && typeof bill.Balance !== 'undefined') {
+            localBillBalance = Number(bill.Balance || 0);
+        }
+    }
+
+    const fin = { rateNameId, accommodation, deposit, balance, localBillBalance };
     reservationFin[reservationId] = fin;
     return fin;
 }
@@ -1111,11 +1124,13 @@ async function hydrateReservationFinancials(rows, venueId) {
             const accEl = document.getElementById(`fin-acc-${id}`);
             const depEl = document.getElementById(`fin-dep-${id}`);
             const balEl = document.getElementById(`fin-bal-${id}`);
+            const billEl = document.getElementById(`fin-bill-${id}`);
 
             if(rateEl) { rateEl.textContent = fin.rateNameId ? `#${fin.rateNameId}` : '—'; rateEl.dataset.loaded = '1'; }
             if(accEl) { accEl.textContent = fmtMoney(fin.accommodation); accEl.dataset.loaded = '1'; }
             if(depEl) { depEl.textContent = fmtMoney(fin.deposit); depEl.dataset.loaded = '1'; }
             if(balEl) { balEl.textContent = fmtMoney(fin.balance); balEl.dataset.loaded = '1'; }
+            if(billEl) { billEl.textContent = (fin.localBillBalance !== null && typeof fin.localBillBalance !== 'undefined') ? fmtMoney(fin.localBillBalance) : '—'; billEl.dataset.loaded = '1'; }
         }
     }
 
@@ -1159,6 +1174,7 @@ function renderReservations() {
         const acc = cached ? fmtMoney(cached.accommodation) : '—';
         const dep = cached ? fmtMoney(cached.deposit) : '—';
         const bal = cached ? fmtMoney(cached.balance) : '—';
+        const localBill = (cached && cached.localBillBalance !== null && typeof cached.localBillBalance !== 'undefined') ? fmtMoney(cached.localBillBalance) : '—';
         return `
         <tr onclick="showResDetail(${r.ReservationID})" style="cursor:pointer">
             <td class="font-medium text-white">${guestName(r)}</td>
@@ -1170,6 +1186,7 @@ function renderReservations() {
             <td class="text-slate-300" id="fin-acc-${r.ReservationID}">${acc}</td>
             <td class="text-slate-300" id="fin-dep-${r.ReservationID}">${dep}</td>
             <td class="text-slate-300" id="fin-bal-${r.ReservationID}">${bal}</td>
+            <td class="text-slate-300" id="fin-bill-${r.ReservationID}">${localBill}</td>
             <td class="text-slate-400">${r.AgentName||'—'}</td>
             <td class="text-slate-400">${fmtDate(r.CreatedDate)}</td>
         </tr>
