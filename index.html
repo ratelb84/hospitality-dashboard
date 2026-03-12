@@ -102,6 +102,9 @@
         <div class="nav-section">Finance</div>
         <div class="nav-item" data-page="report" onclick="showPage('report')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Monthly Report</div>
         <div class="nav-item" data-page="budget" onclick="showPage('budget')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Budget vs Actual</div>
+
+        <div class="nav-section">Financial</div>
+        <div class="nav-item" data-page="forecast" onclick="showPage('forecast')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 15l4-4 3 3 7-7"/></svg>Forecast</div>
         <div class="nav-section">System</div>
         <div class="nav-item" data-page="settings" onclick="showPage('settings')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Settings</div>
     </div>
@@ -239,6 +242,48 @@
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Occupancy: Confirmed vs Target</h3></div><div class="p-6" style="height:300px"><canvas id="reportOccChart"></canvas></div></div>
                 <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Revenue vs Budget</h3></div><div class="p-6" style="height:300px"><canvas id="reportRevChart"></canvas></div></div>
+            </div>
+        </div>
+
+        <!-- FINANCIAL FORECAST PAGE -->
+        <div id="page-forecast" class="hidden fade-in">
+            <div class="card mb-6">
+                <div class="card-header flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                        <h3 class="text-sm font-semibold text-white">Financial Forecast</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Forward-looking view from reservations · commission/VAT can be configured</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="text-xs text-slate-400">Commission %</label>
+                        <input id="finCommissionPct" type="number" step="0.1" value="0" class="input-field text-xs w-20" />
+                        <label class="text-xs text-slate-400">VAT %</label>
+                        <input id="finVatPct" type="number" step="0.1" value="0" class="input-field text-xs w-20" />
+                        <button onclick="renderFinancialForecast()" class="btn btn-primary btn-sm">↻ Refresh</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="table-dark">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Room Nights</th>
+                                <th>Pax</th>
+                                <th>Bed Nights</th>
+                                <th>Total Acc</th>
+                                <th>Commission</th>
+                                <th>Nett Acc</th>
+                                <th>Pre VAT</th>
+                                <th>Comm Pre VAT</th>
+                                <th>Nett Pre VAT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="finForecastBody">
+                            <tr><td colspan="11" class="text-center text-slate-500 py-10">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-4 text-xs text-slate-500" id="finForecastSummary"></div>
             </div>
         </div>
 
@@ -648,7 +693,7 @@ function showPage(page) {
     const pageEl = document.getElementById('page-' + page);
     if(pageEl) { pageEl.classList.remove('hidden'); pageEl.classList.add('fade-in'); }
     document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
-    const titles = {dashboard:'Dashboard',occupancy:'Occupancy Calendar',reservations:'Reservations',gaps:'Gap Analysis',report:'Monthly Report',budget:'Budget vs Actual',settings:'Settings'};
+    const titles = {dashboard:'Dashboard',occupancy:'Occupancy Calendar',reservations:'Reservations',gaps:'Gap Analysis',report:'Monthly Report',budget:'Budget vs Actual',forecast:'Financial Forecast',settings:'Settings'};
     document.getElementById('pageTitle').textContent = titles[page] || page;
     renderCurrentPage();
 }
@@ -661,6 +706,7 @@ function renderCurrentPage() {
     else if(p==='gaps') renderGaps();
     else if(p==='report') renderReport();
     else if(p==='budget') renderBudget();
+    else if(p==='forecast') renderFinancialForecast();
     else if(p==='settings') renderSettings();
 }
 
@@ -1485,6 +1531,111 @@ async function renderReport() {
     });
 
     if(loading) loading.classList.add('hidden');
+}
+
+// ============ FINANCIAL FORECAST ============
+function parsePctInput(id, fallback=0){
+    const el=document.getElementById(id);
+    const v=el ? Number(el.value) : fallback;
+    return isFinite(v) ? v : fallback;
+}
+
+function paxCountFromReservation(r){
+    const a=Number(r?.Adults||0);
+    const c1=Number(r?.Child1||0);
+    const c2=Number(r?.Child2||0);
+    const c3=Number(r?.Child3||0);
+    return a+c1+c2+c3;
+}
+
+function nightsBetween(ci,co){
+    const a=new Date(ci), b=new Date(co);
+    return Math.max(0, Math.round((b-a)/86400000));
+}
+
+async function renderFinancialForecast(){
+    const tbody=document.getElementById('finForecastBody');
+    const summary=document.getElementById('finForecastSummary');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-slate-500 py-10">Loading…</td></tr>';
+
+    const commissionPct = parsePctInput('finCommissionPct', 0) / 100;
+    const vatPct = parsePctInput('finVatPct', 0) / 100;
+
+    const venueId = parseInt(selectedVenueId) || 19138;
+
+    // Use cached forward reservations (we have 12m cached) and enrich with PMSReservation financials (AccommodationTotal)
+    const cached = await cacheGetReservations12m(venueId);
+    let res = cached?.payload?.reservations || [];
+    // Fallback to in-memory reservations
+    if(!res.length) res = reservations || [];
+
+    // Filter to forward 12 months from now
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth()+12, 0);
+    res = res.filter(r => {
+        const ci = r?.CheckInDate ? new Date(r.CheckInDate) : null;
+        return ci && ci >= now && ci <= end && (r.Status !== 'Cancelled');
+    }).sort((a,b) => (a.CheckInDate||'').localeCompare(b.CheckInDate||''));
+
+    // Enrich first N rows with PMSReservation details to get AccommodationTotal
+    const maxRows = 200;
+    const rows = res.slice(0, maxRows);
+
+    // Pull details with limited concurrency
+    const details = {};
+    let idx=0;
+    const conc=6;
+    async function worker(){
+        while(idx < rows.length){
+            const r = rows[idx++];
+            const id = r.ReservationID;
+            const d = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${id}`);
+            if(d) details[id]=d;
+        }
+    }
+    await Promise.all(Array.from({length: conc}, () => worker()));
+
+    let totAcc=0, totComm=0, totNet=0;
+
+    tbody.innerHTML = rows.map(r => {
+        const id = r.ReservationID;
+        const d = details[id] || {};
+
+        const date = fmtDate(r.CheckInDate);
+        const desc = guestName(r) + (r.RoomType?.Name ? ` · ${r.RoomType.Name}` : '');
+        const roomNights = nightsBetween(r.CheckInDate, r.CheckOutDate); // assume 1 room per reservation
+        const pax = paxCountFromReservation(d) || paxCountFromReservation(r) || (r.Guests?.length || 0);
+        const bedNights = roomNights * (pax || 0);
+
+        const totalAcc = Number(d.AccommodationTotal || 0);
+        const commission = totalAcc * commissionPct;
+        const netAcc = totalAcc - commission;
+
+        const accPreVat = vatPct > 0 ? (totalAcc / (1+vatPct)) : totalAcc;
+        const commPreVat = vatPct > 0 ? (commission / (1+vatPct)) : commission;
+        const netPreVat = vatPct > 0 ? (netAcc / (1+vatPct)) : netAcc;
+
+        totAcc += totalAcc; totComm += commission; totNet += netAcc;
+
+        return `
+            <tr>
+                <td>${date}</td>
+                <td class="text-white">${desc}</td>
+                <td>${roomNights}</td>
+                <td>${pax || 0}</td>
+                <td>${bedNights}</td>
+                <td class="text-emerald-300">${fmtMoney(totalAcc)}</td>
+                <td class="text-amber-300">${fmtMoney(commission)}</td>
+                <td class="text-slate-100">${fmtMoney(netAcc)}</td>
+                <td>${fmtMoney(accPreVat)}</td>
+                <td>${fmtMoney(commPreVat)}</td>
+                <td>${fmtMoney(netPreVat)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    summary.textContent = `Showing ${rows.length} bookings (next 12 months). Totals: Acc ${fmtMoney(totAcc)} · Comm ${fmtMoney(totComm)} · Net ${fmtMoney(totNet)}.`;
 }
 
 // ============ BUDGET VS ACTUAL ============
