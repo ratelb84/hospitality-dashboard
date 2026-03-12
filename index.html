@@ -858,9 +858,15 @@ async function renderRevenueByMonth() {
         }
     }
 
-    // Revenue is historical: last 12 months ending current month
+    // Revenue: use the most recent 12 months available in DayEnds data (data often lags)
+    // Determine max date in dataset and chart the 12 months ending that month.
+    const maxDate = (dayEnds||[]).reduce((mx,x)=>{
+        const d = x?.Date ? new Date(x.Date) : null;
+        return d && (!mx || d>mx) ? d : mx;
+    }, null) || now;
+
     for(let i=-11;i<=0;i++) {
-        const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+        const d = new Date(maxDate.getFullYear(), maxDate.getMonth()+i, 1);
         const y = d.getFullYear();
         const m = d.getMonth()+1;
         labels.push(monthLabel(y,m));
