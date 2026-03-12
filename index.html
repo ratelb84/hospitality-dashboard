@@ -179,7 +179,7 @@
                     </div>
                 </div>
                 <div class="overflow-x-auto max-h-[600px] overflow-y-auto scroll-area">
-                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
+                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th>Accommodation</th><th>Deposit</th><th>Balance</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
                 </div>
                 <div class="p-4 text-xs text-slate-500" id="resCount"></div>
             </div>
@@ -1037,6 +1037,55 @@ async function showDailyDetail(venueId, roomTypeId, roomTypeName, year, month) {
 }
 
 // ============ RESERVATIONS ============
+// Reservation financials (lazy-loaded)
+const reservationFin = {}; // ReservationID -> {AccommodationTotal, DepositTotal, Balance}
+
+function fmtMoney(v) {
+    const n = Number(v||0);
+    if(!isFinite(n)) return '—';
+    return 'R' + n.toLocaleString(undefined, {maximumFractionDigits: 0});
+}
+
+async function fetchReservationFinancial(venueId, reservationId) {
+    if(reservationFin[reservationId]) return reservationFin[reservationId];
+    const data = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${reservationId}`);
+    if(!data || data.ReservationID !== reservationId) return null;
+    const accommodation = Number(data.AccommodationTotal || 0);
+    const deposit = Number(data.DepositTotal || 0);
+    const balance = accommodation - deposit;
+    const fin = { accommodation, deposit, balance };
+    reservationFin[reservationId] = fin;
+    return fin;
+}
+
+async function hydrateReservationFinancials(rows, venueId) {
+    // Limit concurrency to avoid hammering API
+    const concurrency = 6;
+    let idx = 0;
+
+    async function worker() {
+        while(idx < rows.length) {
+            const r = rows[idx++];
+            const id = r.ReservationID;
+            // Skip if already filled
+            const cell = document.getElementById(`fin-acc-${id}`);
+            if(!cell || cell.dataset.loaded === '1') continue;
+
+            const fin = await fetchReservationFinancial(venueId, id);
+            if(!fin) continue;
+
+            const accEl = document.getElementById(`fin-acc-${id}`);
+            const depEl = document.getElementById(`fin-dep-${id}`);
+            const balEl = document.getElementById(`fin-bal-${id}`);
+            if(accEl) { accEl.textContent = fmtMoney(fin.accommodation); accEl.dataset.loaded = '1'; }
+            if(depEl) { depEl.textContent = fmtMoney(fin.deposit); depEl.dataset.loaded = '1'; }
+            if(balEl) { balEl.textContent = fmtMoney(fin.balance); balEl.dataset.loaded = '1'; }
+        }
+    }
+
+    await Promise.all(Array.from({length: concurrency}, () => worker()));
+}
+
 function renderReservations() {
     let res = getFilteredReservations();
     const status = document.getElementById('filterStatus').value;
@@ -1068,18 +1117,32 @@ function renderReservations() {
     });
 
     const tbody = document.getElementById('resTableBody');
-    tbody.innerHTML = res.map(r => `
+    tbody.innerHTML = res.map(r => {
+        const cached = reservationFin[r.ReservationID];
+        const acc = cached ? fmtMoney(cached.accommodation) : '—';
+        const dep = cached ? fmtMoney(cached.deposit) : '—';
+        const bal = cached ? fmtMoney(cached.balance) : '—';
+        return `
         <tr onclick="showResDetail(${r.ReservationID})" style="cursor:pointer">
             <td class="font-medium text-white">${guestName(r)}</td>
             <td>${fmtDate(r.CheckInDate)}</td>
             <td>${fmtDate(r.CheckOutDate)}</td>
             <td>${r.RoomType?.Name||'—'}</td>
             <td>${statusBadge(r.Status)}</td>
+            <td class="text-slate-300" id="fin-acc-${r.ReservationID}">${acc}</td>
+            <td class="text-slate-300" id="fin-dep-${r.ReservationID}">${dep}</td>
+            <td class="text-slate-300" id="fin-bal-${r.ReservationID}">${bal}</td>
             <td class="text-slate-400">${r.AgentName||'—'}</td>
             <td class="text-slate-400">${fmtDate(r.CreatedDate)}</td>
         </tr>
-    `).join('');
+        `;
+    }).join('');
     document.getElementById('resCount').textContent = `Showing ${res.length} reservation${res.length!==1?'s':''}`;
+
+    // Load financials for first screenful (avoid huge fetch)
+    const vid = parseInt(selectedVenueId) || 19138;
+    hydrateReservationFinancials(res.slice(0, 80), vid);
+
 }
 
 function sortRes(field) {
