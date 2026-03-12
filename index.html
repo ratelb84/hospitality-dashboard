@@ -1109,6 +1109,7 @@ async function showDailyDetail(venueId, roomTypeId, roomTypeName, year, month) {
 // Reservation financials (lazy-loaded)
 const reservationFin = {}; // ReservationID -> {rateNameId, rateName, rateCharged, accommodation, deposit, balance, localBillBalance}
 const monthRatesCache = {}; // "YYYY-MM" -> array from PMSMonthRates
+const agentRateNamesCache = {}; // agentId -> array from PMSAgentRateNames
 
 function fmtMoney(v) {
     const n = Number(v||0);
@@ -1155,7 +1156,15 @@ function estimateRateFromCard(monthRates, rateNameId, roomTypeId, checkIn, check
     }
 }
 
-async function fetchReservationFinancial(venueId, reservationId, roomTypeId, checkIn, checkOut, pax) {
+async function getAgentRateNames(venueId, agentId) {
+    if(agentId === null || typeof agentId === 'undefined') return null;
+    if(agentRateNamesCache[agentId]) return agentRateNamesCache[agentId];
+    const data = await sempaGet(`OpenAPI/Rates/PMSAgentRateNames?pVenueID=${venueId}&pAgentID=${agentId}`);
+    if(data) agentRateNamesCache[agentId] = data;
+    return agentRateNamesCache[agentId] || null;
+}
+
+async function fetchReservationFinancial(venueId, reservationId, roomTypeId, checkIn, checkOut, pax, agentId) {
     if(reservationFin[reservationId]) return reservationFin[reservationId];
 
     const data = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${reservationId}`);
@@ -1169,10 +1178,20 @@ async function fetchReservationFinancial(venueId, reservationId, roomTypeId, che
     const nights = checkIn && checkOut ? Math.max(0, Math.round((new Date(checkOut) - new Date(checkIn))/86400000)) : 0;
     const rateCharged = nights > 0 ? (accommodation / nights) : null; // actual avg charged per night
 
-    // Lookup human-readable rate name (and optionally estimate from rate card)
+    // Lookup human-readable rate name
+    // Prefer AgentRateNames (agent-specific naming/availability), fallback to MonthRates.
     let rateName = null;
     let rateCardAvg = null;
-    if(rateNameId && checkIn) {
+
+    if(rateNameId) {
+        const agentRates = await getAgentRateNames(venueId, agentId);
+        if(Array.isArray(agentRates)) {
+            const hit = agentRates.find(x => Number(x.RateNameID) === Number(rateNameId));
+            rateName = hit?.RateName || null;
+        }
+    }
+
+    if(!rateName && rateNameId && checkIn) {
         const ci = new Date(checkIn);
         const y = ci.getFullYear();
         const m = ci.getMonth()+1;
@@ -1213,7 +1232,15 @@ async function hydrateReservationFinancials(rows, venueId) {
             if(!cell || cell.dataset.loaded === '1') continue;
 
             const baseRes = reservations.find(x => x.ReservationID === id) || {};
-            const fin = await fetchReservationFinancial(venueId, id, baseRes.RoomType?.ProductTypeID, baseRes.CheckInDate, baseRes.CheckOutDate, (baseRes.Guests?.length||0));
+            const fin = await fetchReservationFinancial(
+                venueId,
+                id,
+                baseRes.RoomType?.ProductTypeID,
+                baseRes.CheckInDate,
+                baseRes.CheckOutDate,
+                (baseRes.Guests?.length||0),
+                baseRes.AgentID
+            );
             if(!fin) continue;
 
             const rateEl = document.getElementById(`fin-rate-${id}`);
