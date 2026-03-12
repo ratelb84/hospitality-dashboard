@@ -455,31 +455,26 @@ function enterApp() {
 async function initApp() {
     document.getElementById('loadingOverlay').classList.remove('hidden');
     await loadVenues();
-    // Filter to only Ilona Host Debug for testing (VenueID 58717)
-    venues = venues.filter(v => v.VenueID === 58717);
-    if(!venues.length) venues = [{VenueID:58717, Name:'Ilona Host Debug', Rooms:6}];
-    // Rebuild venue selector
-    const sel = document.getElementById('venueSelector');
-    sel.innerHTML = '';
-    venues.forEach(v => {
-        sel.innerHTML += `<option value="${v.VenueID}">${v.Name} (${v.Rooms} rooms)</option>`;
-    });
-    selectedVenueId = '58717';
+
+    // Active venues already filtered/locked in loadVenues()
     const activeVenues = venues;
+
+    // Load room types + counts (parallel per venue)
     for(const v of activeVenues) {
         await loadRoomTypes(v.VenueID);
         if(roomTypes[v.VenueID]) {
-            for(const rt of roomTypes[v.VenueID]) {
-                await loadRoomCount(v.VenueID, rt.RoomTypeID);
-            }
+            await Promise.all(roomTypes[v.VenueID].map(rt => loadRoomCount(v.VenueID, rt.RoomTypeID)));
         }
     }
-    // Load reservations: 3 months back + 12 months forward
+
+    // PERFORMANCE: only pull a small default reservation window on first load.
+    // Current month (plus a small forward buffer so the dashboard doesn't feel empty).
     const now = new Date();
-    const start = toYMD(new Date(now.getFullYear(), now.getMonth()-3, 1));
-    const end12 = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
+    const start = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+    const end = toYMD(new Date(now.getFullYear(), now.getMonth()+2, 0));
+
     for(const v of activeVenues) {
-        const res = await loadReservations(v.VenueID, start, end12);
+        const res = await loadReservations(v.VenueID, start, end);
         res.forEach(r => { r._venueId = v.VenueID; });
         reservations = reservations.concat(res);
     }
@@ -497,8 +492,9 @@ async function refreshData() {
     reservations = [];
     const activeVenues = venues.length ? venues : [{VenueID:58946}];
     const now = new Date();
+    // Keep refresh light too (current month + 2 months)
     const start = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
-    const end12 = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
+    const end12 = toYMD(new Date(now.getFullYear(), now.getMonth()+2, 0));
     for(const v of activeVenues) {
         const res = await loadReservations(v.VenueID, start, end12);
         res.forEach(r => { r._venueId = v.VenueID; });
