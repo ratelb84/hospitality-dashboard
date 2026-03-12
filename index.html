@@ -177,12 +177,49 @@
                         <input type="date" id="filterDateFrom" class="input-field text-xs" onchange="renderReservations()">
                         <input type="date" id="filterDateTo" class="input-field text-xs" onchange="renderReservations()">
                         <input type="text" id="filterSearch" class="input-field text-xs w-36" placeholder="Search guest..." oninput="renderReservations()">
+                        <button onclick="inspectRandomReservationsUI()" class="btn btn-outline btn-sm">Inspect 10 (random)</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto max-h-[600px] overflow-y-auto scroll-area">
                     <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th>Rate</th><th>Rate Charged</th><th>Accommodation</th><th>Deposit</th><th>Balance</th><th>Local Bill</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
                 </div>
                 <div class="p-4 text-xs text-slate-500" id="resCount"></div>
+            </div>
+        </div>
+
+        <!-- RESERVATION INSPECTOR MODAL -->
+        <div id="inspectModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:60;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+            <div style="width:min(1100px,95vw);max-height:85vh;overflow:hidden" class="card">
+                <div class="card-header flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-semibold text-white">Reservation Inspector (10 random)</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Pulls rich payloads so you can see what fields exist</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="inspectStatus" class="text-xs text-slate-500">—</span>
+                        <button onclick="closeInspectModal()" class="text-slate-400 hover:text-white cursor-pointer">✕</button>
+                    </div>
+                </div>
+                <div class="p-4 border-b border-white/5">
+                    <div class="text-xs text-slate-400 mb-2">Pick a reservation:</div>
+                    <select id="inspectSelect" class="select-field text-xs w-full" onchange="renderInspectSelected()"></select>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-0" style="height:60vh">
+                    <div class="p-4 overflow-auto scroll-area">
+                        <div class="text-xs text-slate-400 mb-2">Flattened fields (path → value)</div>
+                        <table class="table-dark">
+                            <thead><tr><th>Field</th><th>Value</th></tr></thead>
+                            <tbody id="inspectFields"></tbody>
+                        </table>
+                    </div>
+                    <div class="p-4 overflow-auto scroll-area border-l border-white/5">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-xs text-slate-400">Raw JSON</div>
+                            <button class="btn btn-outline btn-sm" onclick="downloadInspectJson()">Download JSON</button>
+                        </div>
+                        <pre id="inspectJson" class="text-xs text-slate-200" style="white-space:pre-wrap"></pre>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1299,6 +1336,165 @@ function closeResDetail() {
     const modal = document.getElementById('resDetailModal');
     modal.style.display = 'none';
     modal.classList.add('hidden');
+}
+
+// ============ RESERVATION INSPECTOR (10 random) ============
+let inspectData = []; // [{reservationId, payload}]
+let inspectSelectedId = null;
+
+function openInspectModal() {
+    const m = document.getElementById('inspectModal');
+    m.style.display = 'flex';
+    m.classList.remove('hidden');
+}
+
+function closeInspectModal() {
+    const m = document.getElementById('inspectModal');
+    m.style.display = 'none';
+    m.classList.add('hidden');
+}
+
+function flattenObject(obj, prefix = '', out = []) {
+    if (obj === null || typeof obj === 'undefined') {
+        out.push([prefix || '(root)', String(obj)]);
+        return out;
+    }
+    if (typeof obj !== 'object') {
+        out.push([prefix || '(root)', String(obj)]);
+        return out;
+    }
+    if (Array.isArray(obj)) {
+        if (obj.length === 0) out.push([prefix, '[]']);
+        obj.forEach((v, i) => flattenObject(v, `${prefix}[${i}]`, out));
+        return out;
+    }
+    const keys = Object.keys(obj);
+    if (keys.length === 0) out.push([prefix, '{}']);
+    keys.forEach(k => flattenObject(obj[k], prefix ? `${prefix}.${k}` : k, out));
+    return out;
+}
+
+function pickRandom(arr, n) {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, n);
+}
+
+async function inspectRandomReservationsUI() {
+    const statusEl = document.getElementById('inspectStatus');
+    try {
+        openInspectModal();
+        statusEl.textContent = 'Selecting random reservations…';
+
+        const venueId = parseInt(selectedVenueId) || 19138;
+        const list = getFilteredReservations().filter(r => r.Status !== 'Cancelled');
+        const sample = pickRandom(list, Math.min(10, list.length));
+
+        inspectData = [];
+        inspectSelectedId = null;
+
+        statusEl.textContent = `Fetching details for ${sample.length} reservations…`;
+
+        // Fetch in parallel with limited concurrency
+        let idx = 0;
+        const conc = 4;
+        async function worker() {
+            while (idx < sample.length) {
+                const r = sample[idx++];
+                const resId = r.ReservationID;
+
+                // Reservation detail (rich)
+                const detail = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${resId}`);
+
+                // Bill (needs guest/contact id)
+                let bill = null;
+                const guestId = detail?.Contacts?.[0]?.ContactID;
+                if (guestId) {
+                    bill = await sempaGet(`OpenAPI/Reservations/PMSBill?pVenueID=${venueId}&pReservationID=${resId}&pGuestID=${guestId}`);
+                }
+
+                // Rate lookup
+                let rateMonth = null;
+                try {
+                    const ci = detail?.DateArrival ? new Date(detail.DateArrival) : (r.CheckInDate ? new Date(r.CheckInDate) : null);
+                    const rateNameId = detail?.RateNameID;
+                    const roomTypeId = r.RoomType?.ProductTypeID;
+                    if (ci && rateNameId && roomTypeId) {
+                        const mr = await getMonthRates(venueId, ci.getFullYear(), ci.getMonth() + 1);
+                        const row = mr?.find(x => Number(x.RateNameID) === Number(rateNameId) && Number(x.RoomTypeID) === Number(roomTypeId));
+                        rateMonth = { month: ci.getMonth() + 1, year: ci.getFullYear(), rateNameId, roomTypeId, rateName: row?.RateName || null, row: row || null };
+                    }
+                } catch {}
+
+                inspectData.push({
+                    reservationId: resId,
+                    label: `${resId} · ${guestName(r)} · ${fmtDate(r.CheckInDate)} → ${fmtDate(r.CheckOutDate)}`,
+                    payload: {
+                        reservationListRow: r,
+                        PMSReservation: detail,
+                        PMSBill: bill,
+                        RateLookup: rateMonth
+                    }
+                });
+
+                statusEl.textContent = `Fetched ${inspectData.length}/${sample.length}…`;
+            }
+        }
+        await Promise.all(Array.from({ length: conc }, () => worker()));
+
+        // Populate selector
+        const sel = document.getElementById('inspectSelect');
+        sel.innerHTML = '';
+        inspectData.sort((a, b) => a.reservationId - b.reservationId);
+        inspectData.forEach(x => {
+            sel.innerHTML += `<option value="${x.reservationId}">${x.label}</option>`;
+        });
+
+        inspectSelectedId = inspectData[0]?.reservationId || null;
+        if (inspectSelectedId) sel.value = String(inspectSelectedId);
+
+        statusEl.textContent = `Done (${inspectData.length}).`;
+        renderInspectSelected();
+
+    } catch (e) {
+        statusEl.textContent = 'Failed.';
+        console.error(e);
+    }
+}
+
+function renderInspectSelected() {
+    const sel = document.getElementById('inspectSelect');
+    const id = parseInt(sel.value);
+    inspectSelectedId = id;
+    const rec = inspectData.find(x => x.reservationId === id);
+    if (!rec) return;
+
+    const jsonEl = document.getElementById('inspectJson');
+    jsonEl.textContent = JSON.stringify(rec.payload, null, 2);
+
+    const flat = flattenObject(rec.payload);
+    const body = document.getElementById('inspectFields');
+    body.innerHTML = flat.slice(0, 2000).map(([k, v]) => {
+        const vv = (v || '').toString();
+        return `<tr><td class="text-slate-300" style="max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${k}</td><td class="text-slate-200" style="max-width:520px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${vv.replace(/"/g,'&quot;')}">${vv}</td></tr>`;
+    }).join('');
+}
+
+function downloadInspectJson() {
+    const rec = inspectData.find(x => x.reservationId === inspectSelectedId);
+    if (!rec) return;
+    const blob = new Blob([JSON.stringify(rec.payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reservation-inspect-${rec.reservationId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ============ GAP ANALYSIS ============
