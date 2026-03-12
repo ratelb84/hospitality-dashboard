@@ -300,6 +300,7 @@
 // ============ CONFIG ============
 // SEMPA API via serverless proxy (CORS blocks x-channel header in direct calls)
 const SEMPA_PROXY = '/api/sempa';
+const CACHE_API = '/api/cache';
 const SUPABASE_URL = 'https://hqfszlxdkvwlvpwqqmbd.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxZnN6bHhka3Z3bHZwd3FxbWJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NTExODgsImV4cCI6MjA4ODEyNzE4OH0.4OlPny5uJFTslf6iWfF7fAaVl0x2I_VG63QPa1Amq8Q';
 
@@ -451,6 +452,45 @@ function enterApp() {
     initApp();
 }
 
+// ============ CACHE HELPERS ============
+function cacheFreshHours(tsIso, hours) {
+    if(!tsIso) return false;
+    const ageMs = Date.now() - new Date(tsIso).getTime();
+    return ageMs < hours * 3600 * 1000;
+}
+
+async function cacheGetReservations12m(venueId) {
+    try {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}`);
+        if(!r.ok) return null;
+        const j = await r.json();
+        return j?.record || null;
+    } catch(e) {
+        console.warn('cache get failed', e);
+        return null;
+    }
+}
+
+async function cacheSaveReservations12m(venueId, rangeStart, rangeEnd, reservationsArr) {
+    try {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                venueId,
+                rangeStart,
+                rangeEnd,
+                fetchedAt: new Date().toISOString(),
+                payload: { reservations: reservationsArr }
+            })
+        });
+        return r.ok;
+    } catch(e) {
+        console.warn('cache save failed', e);
+        return false;
+    }
+}
+
 // ============ INIT ============
 async function initApp() {
     document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -467,17 +507,48 @@ async function initApp() {
         }
     }
 
-    // PERFORMANCE: only pull a small default reservation window on first load.
-    // Current month (plus a small forward buffer so the dashboard doesn't feel empty).
     const now = new Date();
+
+    // Try load cached 12-month forward reservations immediately (fast UI)
+    for(const v of activeVenues) {
+        const cached = await cacheGetReservations12m(v.VenueID);
+        if(cached?.payload?.reservations?.length && cacheFreshHours(cached.fetched_at, 24)) {
+            cached.payload.reservations.forEach(r => { r._venueId = v.VenueID; });
+            reservations = reservations.concat(cached.payload.reservations);
+        }
+    }
+
+    // Always do a light refresh window on login (current month + 2 months)
     const start = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
     const end = toYMD(new Date(now.getFullYear(), now.getMonth()+2, 0));
 
     for(const v of activeVenues) {
         const res = await loadReservations(v.VenueID, start, end);
         res.forEach(r => { r._venueId = v.VenueID; });
-        reservations = reservations.concat(res);
+
+        // Merge: replace overlapping reservations in-memory for this venue
+        const resIds = new Set(res.map(x => x.ReservationID));
+        reservations = reservations.filter(x => x._venueId !== v.VenueID || !resIds.has(x.ReservationID)).concat(res);
     }
+
+    // Background: if cache is missing/stale, fetch full 12 months forward once and store.
+    // (Do NOT block the UI.)
+    (async () => {
+        try {
+            for(const v of activeVenues) {
+                const existing = await cacheGetReservations12m(v.VenueID);
+                const ok = existing && cacheFreshHours(existing.fetched_at, 24);
+                if(ok) continue;
+
+                const fullStart = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+                const fullEnd = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
+                const full = await loadReservations(v.VenueID, fullStart, fullEnd);
+                await cacheSaveReservations12m(v.VenueID, fullStart, fullEnd, full);
+            }
+        } catch(e) {
+            console.warn('background 12m cache refresh failed', e);
+        }
+    })();
     // Load budgets
     const {data: bData} = await sb.from('hospitality_budgets').select('*');
     if(bData) budgets = bData;
