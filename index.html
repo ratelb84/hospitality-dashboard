@@ -1416,7 +1416,7 @@ async function inspectRandomReservationsUI() {
                     bill = await sempaGet(`OpenAPI/Reservations/PMSBill?pVenueID=${venueId}&pReservationID=${resId}&pGuestID=${guestId}`);
                 }
 
-                // Rate lookup
+                // Rate lookup (month card)
                 let rateMonth = null;
                 try {
                     const ci = detail?.DateArrival ? new Date(detail.DateArrival) : (r.CheckInDate ? new Date(r.CheckInDate) : null);
@@ -1429,14 +1429,31 @@ async function inspectRandomReservationsUI() {
                     }
                 } catch {}
 
+                // Agent rate-name lookup
+                let agentRates = null;
+                let agentRateName = null;
+                try {
+                    const agentId = r.AgentID;
+                    const rateNameId = detail?.RateNameID;
+                    if (agentId !== null && typeof agentId !== 'undefined' && rateNameId) {
+                        agentRates = await sempaGet(`OpenAPI/Rates/PMSAgentRateNames?pVenueID=${venueId}&pAgentID=${agentId}`);
+                        if (Array.isArray(agentRates)) {
+                            const hit = agentRates.find(x => Number(x.RateNameID) === Number(rateNameId));
+                            agentRateName = hit?.RateName || null;
+                        }
+                    }
+                } catch {}
+
                 inspectData.push({
                     reservationId: resId,
-                    label: `${resId} · ${guestName(r)} · ${fmtDate(r.CheckInDate)} → ${fmtDate(r.CheckOutDate)}`,
+                    label: `${resId} · ${guestName(r)} · Agent ${r.AgentID ?? '—'} · ${fmtDate(r.CheckInDate)} → ${fmtDate(r.CheckOutDate)}`,
                     payload: {
                         reservationListRow: r,
                         PMSReservation: detail,
                         PMSBill: bill,
-                        RateLookup: rateMonth
+                        RateLookupMonthCard: rateMonth,
+                        AgentRateNames: agentRates,
+                        AgentRateNameMatch: agentRateName
                     }
                 });
 
