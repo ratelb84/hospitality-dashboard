@@ -127,7 +127,16 @@
                 <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Departures Today</div><div id="statDepartures" class="text-2xl font-bold text-rose-400">—</div><div class="text-xs text-slate-500 mt-1">Check-outs</div></div>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 card"><div class="card-header"><h3 class="text-sm font-semibold text-white">12-Month Occupancy Forecast</h3></div><div class="p-6"><canvas id="occupancyChart" height="200"></canvas></div></div>
+                <div class="lg:col-span-2 card">
+                    <div class="card-header">
+                        <h3 class="text-sm font-semibold text-white">Occupancy (Confirmed vs Provisional)</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">12 months forward · % of capacity</p>
+                    </div>
+                    <div class="p-6"><canvas id="occupancyChart" height="180"></canvas></div>
+                    <div class="border-t border-slate-700/60"></div>
+                    <div class="p-6"><canvas id="revenueChart" height="180"></canvas></div>
+                    <div class="px-6 pb-6 text-xs text-slate-500">Revenue is summed from DayEnds TotalSales per month. Budget line comes from your Budget settings.</div>
+                </div>
                 <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Upcoming Arrivals</h3><p class="text-xs text-slate-500 mt-0.5">Next 7 days</p></div><div id="upcomingArrivals" class="p-4 space-y-2 max-h-[420px] overflow-y-auto scroll-area"></div></div>
             </div>
         </div>
@@ -672,8 +681,9 @@ async function renderDashboard() {
     document.getElementById('statArrivals').textContent = arrivalsToday.length;
     document.getElementById('statDepartures').textContent = departuresToday.length;
 
-    // 12-month occupancy chart (uses availability API for accuracy)
-    await render12MonthChart(active, totalRooms);
+    // Charts
+    await render12MonthChart(active);
+    await renderRevenueByMonth();
 
     // Upcoming arrivals (next 7 days)
     const in7 = toYMD(new Date(now.getTime() + 7*86400000));
@@ -699,37 +709,34 @@ async function renderDashboard() {
     }
 }
 
-async function render12MonthChart(active, totalRooms) {
+async function render12MonthChart(active) {
     const now = new Date();
     const labels = [];
-    const confirmed = [];
-    const provisional = [];
-    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||58946];
+    const confirmedPct = [];
+    const provisionalPct = [];
+    const totalPct = [];
+    const targetPct = [];
+
+    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||19138];
 
     for(let i = 0; i < 12; i++) {
-        const y = new Date(now.getFullYear(), now.getMonth()+i, 1).getFullYear();
-        const m = new Date(now.getFullYear(), now.getMonth()+i, 1).getMonth()+1;
+        const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth()+1;
         labels.push(monthLabel(y, m));
+
         const days = daysInMonth(y, m);
-        const mStart = `${y}-${String(m).padStart(2,'0')}-01`;
-        const mEnd = `${y}-${String(m).padStart(2,'0')}-${String(days).padStart(2,'0')}`;
-
-        // Get availability from API for accurate occupancy
-        let monthTotalNights = 0, monthOccupiedNights = 0;
-        for(const vid of vids) {
+        // Capacity nights = (room count by type) * days
+        let capacityNights = 0;
+        vids.forEach(vid => {
             const rts = roomTypes[vid] || [];
-            for(const rt of rts) {
-                const avail = await loadAvailability(vid, rt.RoomTypeID, mStart, mEnd);
-                if(avail) {
-                    avail.forEach(day => {
-                        monthTotalNights += day.Total;
-                        monthOccupiedNights += (day.Total - day.Available);
-                    });
-                }
-            }
-        }
+            rts.forEach(rt => {
+                const cnt = roomCounts[vid]?.[rt.RoomTypeID] || 0;
+                capacityNights += cnt * days;
+            });
+        });
 
-        // Split occupied into confirmed vs provisional using reservation data
+        // Reservation nights split by status
         let confNights = 0, provNights = 0;
         active.forEach(r => {
             const ci = new Date(r.CheckInDate);
@@ -745,44 +752,102 @@ async function render12MonthChart(active, totalRooms) {
             }
         });
 
-        // Use availability-based total occupancy, split proportionally into conf/prov
-        const totalResNights = confNights + provNights;
-        if(monthTotalNights > 0 && totalResNights > 0) {
-            const confRatio = confNights / totalResNights;
-            const provRatio = provNights / totalResNights;
-            const occPct = Math.round((monthOccupiedNights / monthTotalNights) * 100);
-            confirmed.push(Math.min(Math.round(occPct * confRatio), 100));
-            provisional.push(Math.min(Math.round(occPct * provRatio), 100));
-        } else if(monthTotalNights > 0) {
-            confirmed.push(Math.round((monthOccupiedNights / monthTotalNights) * 100));
-            provisional.push(0);
-        } else {
-            confirmed.push(0);
-            provisional.push(0);
-        }
+        const conf = capacityNights > 0 ? (confNights / capacityNights * 100) : 0;
+        const prov = capacityNights > 0 ? (provNights / capacityNights * 100) : 0;
+        confirmedPct.push(Number(conf.toFixed(1)));
+        provisionalPct.push(Number(prov.toFixed(1)));
+        totalPct.push(Number((conf + prov).toFixed(1)));
+
+        // Budget target occupancy % (from budgets table)
+        const b = budgets.find(x => x.venue_id === vids[0] && x.year === y && x.month === m);
+        targetPct.push(b?.target_occupancy_pct ?? null);
     }
 
     if(occChart) occChart.destroy();
     const ctx = document.getElementById('occupancyChart').getContext('2d');
     occChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
             labels,
             datasets: [
-                {label:'Confirmed', data:confirmed, backgroundColor:'rgba(16,185,129,0.6)', borderRadius:4, barPercentage:0.7},
-                {label:'Provisional', data:provisional, backgroundColor:'rgba(245,158,11,0.5)', borderRadius:4, barPercentage:0.7}
+                {label:'Confirmed %', data: confirmedPct, borderColor:'rgba(16,185,129,0.95)', backgroundColor:'rgba(16,185,129,0.08)', tension:0.3, fill:true, pointRadius:3},
+                {label:'Provisional %', data: provisionalPct, borderColor:'rgba(245,158,11,0.9)', backgroundColor:'rgba(245,158,11,0.06)', tension:0.3, fill:true, pointRadius:3},
+                {label:'Total %', data: totalPct, borderColor:'rgba(99,102,241,0.95)', borderWidth:2, tension:0.3, fill:false, pointRadius:2},
+                {label:'Budget Target %', data: targetPct, borderColor:'rgba(244,63,94,0.9)', borderDash:[6,4], tension:0.2, fill:false, pointRadius:0}
             ]
         },
         options: {
             responsive:true, maintainAspectRatio:false,
             plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
             scales:{
-                x:{stacked:true, ticks:{color:'#64748b',font:{size:10}}, grid:{display:false}},
-                y:{stacked:true, max:100, ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'}, grid:{color:'rgba(255,255,255,0.04)'}}
+                x:{ticks:{color:'#64748b',font:{size:10}}, grid:{display:false}},
+                y:{min:0, max:100, ticks:{color:'#64748b',font:{size:10},callback:v=>v+'%'}, grid:{color:'rgba(255,255,255,0.04)'}}
             }
         }
     });
 }
+
+let revChart = null;
+async function renderRevenueByMonth() {
+    const now = new Date();
+    const labels = [];
+    const revenue = [];
+    const budgetRev = [];
+
+    const vid = parseInt(selectedVenueId) || 19138;
+
+    // Pull day ends (big response), then filter client-side to our 12 months.
+    let dayEnds = [];
+    try {
+        dayEnds = await sempaGet('OpenAPI/Venues/PMSDayEnds', { pVenueID: vid }) || [];
+    } catch(e) {
+        dayEnds = [];
+    }
+
+    for(let i=0;i<12;i++) {
+        const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth()+1;
+        labels.push(monthLabel(y,m));
+
+        const monthStart = new Date(y, m-1, 1);
+        const monthEnd = new Date(y, m, 0);
+
+        const totalSales = dayEnds
+            .filter(x => {
+                const dt = new Date(x.Date);
+                return dt >= monthStart && dt <= monthEnd;
+            })
+            .reduce((sum,x)=> sum + (Number(x.TotalSales)||0), 0);
+
+        revenue.push(Number((totalSales/1000).toFixed(0))); // show in '000s
+
+        const b = budgets.find(x => x.venue_id === vid && x.year === y && x.month === m);
+        budgetRev.push(b?.target_revenue ? Number((b.target_revenue/1000).toFixed(0)) : null);
+    }
+
+    if(revChart) revChart.destroy();
+    const ctx = document.getElementById('revenueChart').getContext('2d');
+    revChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {label:'Revenue (R000)', data: revenue, backgroundColor:'rgba(34,197,94,0.55)', borderRadius:4, barPercentage:0.7},
+                {label:'Budget (R000)', data: budgetRev, type:'line', borderColor:'rgba(244,63,94,0.9)', borderDash:[6,4], tension:0.25, pointRadius:2, fill:false}
+            ]
+        },
+        options: {
+            responsive:true, maintainAspectRatio:false,
+            plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+            scales:{
+                x:{ticks:{color:'#64748b',font:{size:10}}, grid:{display:false}},
+                y:{ticks:{color:'#64748b',font:{size:10}, callback:v=>'R'+v+'k'}, grid:{color:'rgba(255,255,255,0.04)'}}
+            }
+        }
+    });
+}
+
 
 // ============ OCCUPANCY CALENDAR ============
 async function renderOccupancy() {
