@@ -265,8 +265,7 @@
                     <table class="table-dark">
                         <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Description</th>
+                                <th>Month</th>
                                 <th>Room Nights</th>
                                 <th>Pax</th>
                                 <th>Bed Nights</th>
@@ -279,7 +278,7 @@
                             </tr>
                         </thead>
                         <tbody id="finForecastBody">
-                            <tr><td colspan="11" class="text-center text-slate-500 py-10">Loading…</td></tr>
+                            <tr><td colspan="10" class="text-center text-slate-500 py-10">Loading…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1563,7 +1562,7 @@ async function renderFinancialForecast(){
     const tbody=document.getElementById('finForecastBody');
     const summary=document.getElementById('finForecastSummary');
     if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-slate-500 py-10">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-slate-500 py-10">Loading…</td></tr>';
 
     const commissionPct = parsePctInput('finCommissionPct', 0) / 100;
     const vatPct = parsePctInput('finVatPct', 0) / 100;
@@ -1584,37 +1583,51 @@ async function renderFinancialForecast(){
         return ci && ci >= now && ci <= end && (r.Status !== 'Cancelled');
     }).sort((a,b) => (a.CheckInDate||'').localeCompare(b.CheckInDate||''));
 
-    // Enrich first N rows with PMSReservation details to get AccommodationTotal
-    const maxRows = 200;
-    const rows = res.slice(0, maxRows);
+    // Group by month and enrich a limited number of reservations per month to estimate Total Acc
+    const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const months = {}; // key -> {year,month, roomNights, pax, bedNights, reservationIds:[]}
 
-    // Pull details with limited concurrency
+    for(const r of res) {
+        const ci = new Date(r.CheckInDate);
+        const key = monthKey(ci);
+        if(!months[key]) months[key] = { y: ci.getFullYear(), m: ci.getMonth()+1, roomNights:0, pax:0, bedNights:0, reservationIds:[] };
+        const rn = nightsBetween(r.CheckInDate, r.CheckOutDate);
+        months[key].roomNights += rn;
+        const pax = paxCountFromReservation(r) || (r.Guests?.length || 0);
+        months[key].pax += pax;
+        months[key].bedNights += rn * pax;
+        months[key].reservationIds.push(r.ReservationID);
+    }
+
+    const monthRows = Object.keys(months)
+        .sort()
+        .slice(0, 12)
+        .map(k => ({ key: k, ...months[k] }));
+
+    // For accuracy, enrich up to N reservations per month to sum AccommodationTotal
+    const perMonthEnrich = 25;
     const details = {};
+    let work = [];
+    for(const mr of monthRows) {
+        mr.enrichIds = mr.reservationIds.slice(0, perMonthEnrich);
+        work = work.concat(mr.enrichIds.map(id => ({ monthKey: mr.key, id })));
+    }
+
     let idx=0;
     const conc=6;
     async function worker(){
-        while(idx < rows.length){
-            const r = rows[idx++];
-            const id = r.ReservationID;
-            const d = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${id}`);
-            if(d) details[id]=d;
+        while(idx < work.length){
+            const w = work[idx++];
+            const d = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${w.id}`);
+            if(d) details[w.id]=d;
         }
     }
     await Promise.all(Array.from({length: conc}, () => worker()));
 
     let totAcc=0, totComm=0, totNet=0;
 
-    tbody.innerHTML = rows.map(r => {
-        const id = r.ReservationID;
-        const d = details[id] || {};
-
-        const date = fmtDate(r.CheckInDate);
-        const desc = guestName(r) + (r.RoomType?.Name ? ` · ${r.RoomType.Name}` : '');
-        const roomNights = nightsBetween(r.CheckInDate, r.CheckOutDate); // assume 1 room per reservation
-        const pax = paxCountFromReservation(d) || paxCountFromReservation(r) || (r.Guests?.length || 0);
-        const bedNights = roomNights * (pax || 0);
-
-        const totalAcc = Number(d.AccommodationTotal || 0);
+    tbody.innerHTML = monthRows.map(mr => {
+        const totalAcc = mr.enrichIds.reduce((s,id)=> s + Number(details[id]?.AccommodationTotal||0), 0);
         const commission = totalAcc * commissionPct;
         const netAcc = totalAcc - commission;
 
@@ -1624,13 +1637,15 @@ async function renderFinancialForecast(){
 
         totAcc += totalAcc; totComm += commission; totNet += netAcc;
 
+        const label = monthLabelLong(mr.y, mr.m);
+        const avgPax = mr.reservationIds.length ? (mr.pax / mr.reservationIds.length) : 0;
+
         return `
             <tr>
-                <td>${date}</td>
-                <td class="text-white">${desc}</td>
-                <td>${roomNights}</td>
-                <td>${pax || 0}</td>
-                <td>${bedNights}</td>
+                <td class="text-white font-medium">${label}</td>
+                <td>${mr.roomNights}</td>
+                <td>${avgPax.toFixed(1)}</td>
+                <td>${mr.bedNights}</td>
                 <td class="text-emerald-300">${fmtMoney(totalAcc)}</td>
                 <td class="text-amber-300">${fmtMoney(commission)}</td>
                 <td class="text-slate-100">${fmtMoney(netAcc)}</td>
@@ -1641,7 +1656,7 @@ async function renderFinancialForecast(){
         `;
     }).join('');
 
-    summary.textContent = `Showing ${rows.length} bookings (next 12 months). Totals: Acc ${fmtMoney(totAcc)} · Comm ${fmtMoney(totComm)} · Net ${fmtMoney(totNet)}.`;
+    summary.textContent = `Months shown: ${monthRows.length}. Totals: Acc ${fmtMoney(totAcc)} · Comm ${fmtMoney(totComm)} · Net ${fmtMoney(totNet)}. (Revenue uses up to ${perMonthEnrich} enriched bookings per month)`;
 }
 
 // ============ BUDGET VS ACTUAL ============
