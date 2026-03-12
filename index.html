@@ -180,7 +180,7 @@
                     </div>
                 </div>
                 <div class="overflow-x-auto max-h-[600px] overflow-y-auto scroll-area">
-                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th>Rate</th><th>Accommodation</th><th>Deposit</th><th>Balance</th><th>Local Bill</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
+                    <table class="table-dark"><thead><tr><th onclick="sortRes('guest')">Guest ↕</th><th onclick="sortRes('checkin')">Check-in ↕</th><th onclick="sortRes('checkout')">Check-out ↕</th><th onclick="sortRes('roomtype')">Room Type ↕</th><th onclick="sortRes('status')">Status ↕</th><th>Rate</th><th>Rate Charged</th><th>Accommodation</th><th>Deposit</th><th>Balance</th><th>Local Bill</th><th onclick="sortRes('agent')">Agent ↕</th><th onclick="sortRes('created')">Created ↕</th></tr></thead><tbody id="resTableBody"></tbody></table>
                 </div>
                 <div class="p-4 text-xs text-slate-500" id="resCount"></div>
             </div>
@@ -1070,7 +1070,8 @@ async function showDailyDetail(venueId, roomTypeId, roomTypeName, year, month) {
 
 // ============ RESERVATIONS ============
 // Reservation financials (lazy-loaded)
-const reservationFin = {}; // ReservationID -> {rateNameId, accommodation, deposit, balance, localBillBalance}
+const reservationFin = {}; // ReservationID -> {rateNameId, rateName, rateCharged, accommodation, deposit, balance, localBillBalance}
+const monthRatesCache = {}; // "YYYY-MM" -> array from PMSMonthRates
 
 function fmtMoney(v) {
     const n = Number(v||0);
@@ -1078,7 +1079,46 @@ function fmtMoney(v) {
     return 'R' + n.toLocaleString(undefined, {maximumFractionDigits: 0});
 }
 
-async function fetchReservationFinancial(venueId, reservationId) {
+async function getMonthRates(venueId, y, m) {
+    const key = `${y}-${String(m).padStart(2,'0')}`;
+    if(monthRatesCache[key]) return monthRatesCache[key];
+    const data = await sempaGet(`OpenAPI/Rates/PMSMonthRates?pVenueID=${venueId}&pMonth=${m}&pYear=${y}`);
+    if(data) monthRatesCache[key] = data;
+    return monthRatesCache[key] || null;
+}
+
+function estimateRateFromCard(monthRates, rateNameId, roomTypeId, checkIn, checkOut, pax) {
+    try {
+        if(!monthRates || !rateNameId || !roomTypeId) return null;
+        const row = monthRates.find(r => Number(r.RateNameID) === Number(rateNameId) && Number(r.RoomTypeID) === Number(roomTypeId));
+        if(!row) return null;
+
+        const ci = new Date(checkIn);
+        const co = new Date(checkOut);
+        const nights = Math.max(0, Math.round((co - ci) / 86400000));
+        if(!nights) return null;
+
+        let sum = 0;
+        let counted = 0;
+        for(let i=0;i<nights;i++) {
+            const d = new Date(ci.getTime() + i*86400000);
+            // Only for same month (if spans month, return null so we fall back)
+            if(d.getMonth() !== ci.getMonth() || d.getFullYear() !== ci.getFullYear()) return null;
+            const dayIdx = d.getDate() - 1;
+            const arr = (pax && pax >= 2) ? row.Sharing : row.Single;
+            if(Array.isArray(arr) && typeof arr[dayIdx] !== 'undefined') {
+                sum += Number(arr[dayIdx] || 0);
+                counted++;
+            }
+        }
+        if(!counted) return null;
+        return sum / counted;
+    } catch {
+        return null;
+    }
+}
+
+async function fetchReservationFinancial(venueId, reservationId, roomTypeId, checkIn, checkOut, pax) {
     if(reservationFin[reservationId]) return reservationFin[reservationId];
 
     const data = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${reservationId}`);
@@ -1088,6 +1128,24 @@ async function fetchReservationFinancial(venueId, reservationId) {
     const deposit = Number(data.DepositTotal || 0);
     const balance = accommodation - deposit;
     const rateNameId = data.RateNameID ?? null;
+
+    const nights = checkIn && checkOut ? Math.max(0, Math.round((new Date(checkOut) - new Date(checkIn))/86400000)) : 0;
+    const rateCharged = nights > 0 ? (accommodation / nights) : null; // actual avg charged per night
+
+    // Lookup human-readable rate name (and optionally estimate from rate card)
+    let rateName = null;
+    let rateCardAvg = null;
+    if(rateNameId && checkIn) {
+        const ci = new Date(checkIn);
+        const y = ci.getFullYear();
+        const m = ci.getMonth()+1;
+        const mr = await getMonthRates(venueId, y, m);
+        if(mr) {
+            const row = mr.find(r => Number(r.RateNameID) === Number(rateNameId) && Number(r.RoomTypeID) === Number(roomTypeId));
+            rateName = row?.RateName || null;
+            rateCardAvg = estimateRateFromCard(mr, rateNameId, roomTypeId, checkIn, checkOut, pax);
+        }
+    }
 
     // Local bill: requires guest/contact id
     let localBillBalance = null;
@@ -1099,7 +1157,7 @@ async function fetchReservationFinancial(venueId, reservationId) {
         }
     }
 
-    const fin = { rateNameId, accommodation, deposit, balance, localBillBalance };
+    const fin = { rateNameId, rateName, rateCharged, rateCardAvg, accommodation, deposit, balance, localBillBalance };
     reservationFin[reservationId] = fin;
     return fin;
 }
@@ -1117,16 +1175,19 @@ async function hydrateReservationFinancials(rows, venueId) {
             const cell = document.getElementById(`fin-acc-${id}`);
             if(!cell || cell.dataset.loaded === '1') continue;
 
-            const fin = await fetchReservationFinancial(venueId, id);
+            const baseRes = reservations.find(x => x.ReservationID === id) || {};
+            const fin = await fetchReservationFinancial(venueId, id, baseRes.RoomType?.ProductTypeID, baseRes.CheckInDate, baseRes.CheckOutDate, (baseRes.Guests?.length||0));
             if(!fin) continue;
 
             const rateEl = document.getElementById(`fin-rate-${id}`);
+            const rateChEl = document.getElementById(`fin-ratecharged-${id}`);
             const accEl = document.getElementById(`fin-acc-${id}`);
             const depEl = document.getElementById(`fin-dep-${id}`);
             const balEl = document.getElementById(`fin-bal-${id}`);
             const billEl = document.getElementById(`fin-bill-${id}`);
 
-            if(rateEl) { rateEl.textContent = fin.rateNameId ? `#${fin.rateNameId}` : '—'; rateEl.dataset.loaded = '1'; }
+            if(rateEl) { rateEl.textContent = fin.rateName || (fin.rateNameId ? `#${fin.rateNameId}` : '—'); rateEl.dataset.loaded = '1'; }
+            if(rateChEl) { rateChEl.textContent = fin.rateCharged ? fmtMoney(fin.rateCharged) : '—'; rateChEl.dataset.loaded = '1'; }
             if(accEl) { accEl.textContent = fmtMoney(fin.accommodation); accEl.dataset.loaded = '1'; }
             if(depEl) { depEl.textContent = fmtMoney(fin.deposit); depEl.dataset.loaded = '1'; }
             if(balEl) { balEl.textContent = fmtMoney(fin.balance); balEl.dataset.loaded = '1'; }
@@ -1170,7 +1231,8 @@ function renderReservations() {
     const tbody = document.getElementById('resTableBody');
     tbody.innerHTML = res.map(r => {
         const cached = reservationFin[r.ReservationID];
-        const rate = cached?.rateNameId ? `#${cached.rateNameId}` : '—';
+        const rate = cached?.rateName ? cached.rateName : (cached?.rateNameId ? `#${cached.rateNameId}` : '—');
+        const rateCharged = cached?.rateCharged ? fmtMoney(cached.rateCharged) : '—';
         const acc = cached ? fmtMoney(cached.accommodation) : '—';
         const dep = cached ? fmtMoney(cached.deposit) : '—';
         const bal = cached ? fmtMoney(cached.balance) : '—';
@@ -1183,6 +1245,7 @@ function renderReservations() {
             <td>${r.RoomType?.Name||'—'}</td>
             <td>${statusBadge(r.Status)}</td>
             <td class="text-slate-300" id="fin-rate-${r.ReservationID}">${rate}</td>
+            <td class="text-slate-300" id="fin-ratecharged-${r.ReservationID}">${rateCharged}</td>
             <td class="text-slate-300" id="fin-acc-${r.ReservationID}">${acc}</td>
             <td class="text-slate-300" id="fin-dep-${r.ReservationID}">${dep}</td>
             <td class="text-slate-300" id="fin-bal-${r.ReservationID}">${bal}</td>
