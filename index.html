@@ -356,11 +356,20 @@ async function sempaGet(endpoint) {
 async function loadVenues() {
     const data = await sempaGet('OpenAPI/Venues/CRSChannelVenues');
     if(data) venues = data;
+
+    // Force single production venue (Nambiti Hills)
+    venues = (venues || []).filter(v => String(v.VenueID) === '19138');
+    selectedVenueId = '19138';
+
     const sel = document.getElementById('venueSelector');
-    sel.innerHTML = '<option value="all">All Properties</option>';
-    venues.forEach(v => {
-        sel.innerHTML += `<option value="${v.VenueID}">${v.Name} (${v.Rooms} rooms)</option>`;
-    });
+    if(sel) {
+        sel.innerHTML = '';
+        venues.forEach(v => {
+            sel.innerHTML += `<option value="${v.VenueID}" selected>${v.Name} (${v.Rooms} rooms)</option>`;
+        });
+        // Hide selector UI since we only have one venue
+        sel.parentElement?.classList.add('hidden');
+    }
 }
 
 async function loadRoomTypes(venueId) {
