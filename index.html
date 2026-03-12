@@ -100,6 +100,7 @@
         <div class="nav-item" data-page="reservations" onclick="showPage('reservations')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Reservations</div>
         <div class="nav-item" data-page="gaps" onclick="showPage('gaps')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>Gap Analysis</div>
         <div class="nav-section">Finance</div>
+        <div class="nav-item" data-page="report" onclick="showPage('report')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Monthly Report</div>
         <div class="nav-item" data-page="budget" onclick="showPage('budget')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Budget vs Actual</div>
         <div class="nav-section">System</div>
         <div class="nav-item" data-page="settings" onclick="showPage('settings')"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Settings</div>
@@ -176,6 +177,51 @@
             </div>
             <div class="card mb-6"><div class="card-header"><h3 class="text-sm font-semibold text-white">3-Month Availability Heatmap</h3><p class="text-xs text-slate-400 mt-0.5">Red = empty gaps, Yellow = partial, Green = full</p></div><div id="gapHeatmap" class="p-6 overflow-x-auto"></div></div>
             <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Gap Summary by Room Type</h3></div><div id="gapDetails" class="p-6"></div></div>
+        </div>
+
+        <!-- MONTHLY REPORT PAGE -->
+        <div id="page-report" class="hidden fade-in">
+            <div class="card mb-6">
+                <div class="card-header flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                        <h3 class="text-sm font-semibold text-white">Monthly Performance Report</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">12-month view · Bed nights, occupancy, revenue & budget</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="reportLoading" class="text-xs text-slate-500 hidden">Loading...</span>
+                        <button onclick="renderReport()" class="btn btn-outline btn-sm">↻ Refresh</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left">Month</th>
+                                <th>Available<br>Bed Nights</th>
+                                <th>Confirmed<br>Bed Nights</th>
+                                <th>Provisional<br>Bed Nights</th>
+                                <th>Total<br>Bednights</th>
+                                <th>Target<br>Bed Nights</th>
+                                <th>Confirmed<br>Occ %</th>
+                                <th>Total<br>Occ %</th>
+                                <th>Occ<br>Target %</th>
+                                <th>Avg<br>Rate</th>
+                                <th>Avg Rate<br>Target</th>
+                                <th>Total<br>Revenue</th>
+                                <th>Budget<br>Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportTableBody">
+                            <tr><td colspan="13" class="text-center text-slate-500 py-8">Loading report data from SEMPA...</td></tr>
+                        </tbody>
+                        <tfoot id="reportTableFoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Occupancy: Confirmed vs Target</h3></div><div class="p-6" style="height:300px"><canvas id="reportOccChart"></canvas></div></div>
+                <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Revenue vs Budget</h3></div><div class="p-6" style="height:300px"><canvas id="reportRevChart"></canvas></div></div>
+            </div>
         </div>
 
         <!-- BUDGET VS ACTUAL PAGE -->
@@ -473,7 +519,7 @@ function showPage(page) {
     const pageEl = document.getElementById('page-' + page);
     if(pageEl) { pageEl.classList.remove('hidden'); pageEl.classList.add('fade-in'); }
     document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
-    const titles = {dashboard:'Dashboard',occupancy:'Occupancy Calendar',reservations:'Reservations',gaps:'Gap Analysis',budget:'Budget vs Actual',settings:'Settings'};
+    const titles = {dashboard:'Dashboard',occupancy:'Occupancy Calendar',reservations:'Reservations',gaps:'Gap Analysis',report:'Monthly Report',budget:'Budget vs Actual',settings:'Settings'};
     document.getElementById('pageTitle').textContent = titles[page] || page;
     renderCurrentPage();
 }
@@ -484,6 +530,7 @@ function renderCurrentPage() {
     else if(p==='occupancy') renderOccupancy();
     else if(p==='reservations') renderReservations();
     else if(p==='gaps') renderGaps();
+    else if(p==='report') renderReport();
     else if(p==='budget') renderBudget();
     else if(p==='settings') renderSettings();
 }
@@ -980,6 +1027,210 @@ async function renderGaps() {
     });
     detailHtml += '</div>';
     document.getElementById('gapDetails').innerHTML = detailHtml;
+}
+
+// ============ MONTHLY REPORT (EXCEL MATCH) ============
+let reportOccChart = null, reportRevChart = null;
+
+async function renderReport() {
+    const loading = document.getElementById('reportLoading');
+    if(loading) loading.classList.remove('hidden');
+
+    const now = new Date();
+    const active = getActiveReservations();
+    const vids = selectedVenueId === 'all' ? venues.map(v=>v.VenueID) : [parseInt(selectedVenueId)||58717];
+    const venueId = vids[0];
+
+    // Build 12 months: 3 back + current + 8 forward (matching Excel range)
+    const months = [];
+    for(let i = -3; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        months.push({ y: d.getFullYear(), m: d.getMonth() + 1 });
+    }
+
+    const rows = [];
+    const totals = { available: 0, confirmed: 0, provisional: 0, total: 0, target: 0, revenue: 0, budget: 0 };
+
+    for(const mo of months) {
+        const days = daysInMonth(mo.y, mo.m);
+        const mStart = `${mo.y}-${String(mo.m).padStart(2,'0')}-01`;
+        const mEnd = `${mo.y}-${String(mo.m).padStart(2,'0')}-${String(days).padStart(2,'0')}`;
+
+        // Available bed nights from PMSAvailable API
+        let availableBedNights = 0;
+        for(const vid of vids) {
+            const rts = roomTypes[vid] || [];
+            for(const rt of rts) {
+                const avail = await loadAvailability(vid, rt.RoomTypeID, mStart, mEnd);
+                if(avail) {
+                    avail.forEach(day => { availableBedNights += day.Total; });
+                }
+            }
+        }
+
+        // Confirmed & Provisional bed nights from reservations
+        let confirmedNights = 0, provisionalNights = 0;
+        active.forEach(r => {
+            const ci = new Date(r.CheckInDate);
+            const co = new Date(r.CheckOutDate);
+            const monthStart = new Date(mo.y, mo.m - 1, 1);
+            const monthEnd = new Date(mo.y, mo.m, 0);
+            const overlapStart = ci > monthStart ? ci : monthStart;
+            const overlapEnd = co < monthEnd ? co : new Date(monthEnd.getTime() + 86400000);
+            const nights = Math.max(0, Math.ceil((overlapEnd - overlapStart) / 86400000));
+            if(nights > 0) {
+                if(r.Status === 'Confirmed' || r.Status === 'In House' || r.Status === 'Checked Out') {
+                    confirmedNights += nights;
+                } else if(r.Status === 'Provisional') {
+                    provisionalNights += nights;
+                }
+            }
+        });
+
+        const totalBedNights = confirmedNights + provisionalNights;
+
+        // Budget data from Supabase
+        const b = budgets.find(x => x.venue_id === venueId && x.year === mo.y && x.month === mo.m);
+        const targetOccPct = b ? parseFloat(b.target_occupancy_pct || 0) : 0;
+        const targetBedNights = availableBedNights > 0 ? Math.round(availableBedNights * targetOccPct / 100) : 0;
+        const targetADR = b ? parseFloat(b.target_adr || 0) : 0;
+        const budgetRevenue = b ? parseFloat(b.target_revenue || 0) : 0;
+
+        // Occupancy percentages
+        const confirmedOccPct = availableBedNights > 0 ? (confirmedNights / availableBedNights * 100) : 0;
+        const totalOccPct = availableBedNights > 0 ? (totalBedNights / availableBedNights * 100) : 0;
+        const occTargetPct = targetOccPct;
+
+        // Revenue: use rates if available, otherwise estimate
+        const avgRate = totalBedNights > 0 && budgetRevenue > 0 ? (budgetRevenue / targetBedNights * confirmedOccPct / occTargetPct) : 0;
+        const totalRevenue = confirmedNights * (targetADR || (budgetRevenue > 0 && targetBedNights > 0 ? budgetRevenue / targetBedNights : 0));
+        const avgRateTarget = targetBedNights > 0 && budgetRevenue > 0 ? budgetRevenue / targetBedNights : 0;
+        const actualAvgRate = totalBedNights > 0 ? totalRevenue / totalBedNights : 0;
+
+        const row = {
+            label: monthLabelLong(mo.y, mo.m),
+            shortLabel: monthLabel(mo.y, mo.m),
+            available: availableBedNights,
+            confirmed: confirmedNights,
+            provisional: provisionalNights,
+            total: totalBedNights,
+            target: targetBedNights,
+            confirmedOccPct,
+            totalOccPct,
+            occTargetPct,
+            avgRate: actualAvgRate,
+            avgRateTarget,
+            revenue: totalRevenue,
+            budget: budgetRevenue
+        };
+        rows.push(row);
+
+        totals.available += availableBedNights;
+        totals.confirmed += confirmedNights;
+        totals.provisional += provisionalNights;
+        totals.total += totalBedNights;
+        totals.target += targetBedNights;
+        totals.revenue += totalRevenue;
+        totals.budget += budgetRevenue;
+    }
+
+    // Render table
+    const tbody = document.getElementById('reportTableBody');
+    tbody.innerHTML = rows.map(r => {
+        const confOccCls = r.occTargetPct > 0 ? (r.confirmedOccPct >= r.occTargetPct ? 'var-green' : r.confirmedOccPct >= r.occTargetPct * 0.9 ? 'var-yellow' : 'var-red') : 'var-neutral';
+        const totOccCls = r.occTargetPct > 0 ? (r.totalOccPct >= r.occTargetPct ? 'var-green' : r.totalOccPct >= r.occTargetPct * 0.9 ? 'var-yellow' : 'var-red') : 'var-neutral';
+        const revCls = r.budget > 0 ? (r.revenue >= r.budget ? 'var-green' : r.revenue >= r.budget * 0.9 ? 'var-yellow' : 'var-red') : 'var-neutral';
+
+        return `<tr>
+            <td>${r.label}</td>
+            <td>${r.available.toLocaleString()}</td>
+            <td>${r.confirmed.toLocaleString()}</td>
+            <td>${r.provisional.toLocaleString()}</td>
+            <td style="font-weight:600">${r.total.toLocaleString()}</td>
+            <td>${r.target ? r.target.toLocaleString() : '<span class="text-slate-500">—</span>'}</td>
+            <td class="${confOccCls}" style="font-weight:600">${r.confirmedOccPct.toFixed(1)}%</td>
+            <td class="${totOccCls}" style="font-weight:600">${r.totalOccPct.toFixed(1)}%</td>
+            <td>${r.occTargetPct ? r.occTargetPct.toFixed(1) + '%' : '<span class="text-slate-500">—</span>'}</td>
+            <td>${r.avgRate ? 'R' + r.avgRate.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '<span class="text-slate-500">—</span>'}</td>
+            <td>${r.avgRateTarget ? 'R' + r.avgRateTarget.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '<span class="text-slate-500">—</span>'}</td>
+            <td class="${revCls}">R${r.revenue ? (r.revenue/1e6).toFixed(2) + 'M' : '0'}</td>
+            <td>${r.budget ? 'R' + (r.budget/1e6).toFixed(2) + 'M' : '<span class="text-slate-500">—</span>'}</td>
+        </tr>`;
+    }).join('');
+
+    // Totals row
+    const tfoot = document.getElementById('reportTableFoot');
+    const avgConfOcc = totals.available > 0 ? (totals.confirmed / totals.available * 100) : 0;
+    const avgTotOcc = totals.available > 0 ? (totals.total / totals.available * 100) : 0;
+    const avgTargOcc = totals.available > 0 && totals.target > 0 ? (totals.target / totals.available * 100) : 0;
+    const avgRate = totals.total > 0 ? totals.revenue / totals.total : 0;
+    const avgRateTarget = totals.target > 0 && totals.budget > 0 ? totals.budget / totals.target : 0;
+
+    tfoot.innerHTML = `<tr>
+        <td>TOTAL / AVG</td>
+        <td>${totals.available.toLocaleString()}</td>
+        <td>${totals.confirmed.toLocaleString()}</td>
+        <td>${totals.provisional.toLocaleString()}</td>
+        <td>${totals.total.toLocaleString()}</td>
+        <td>${totals.target ? totals.target.toLocaleString() : '—'}</td>
+        <td style="color:#34d399">${avgConfOcc.toFixed(1)}%</td>
+        <td style="color:#34d399">${avgTotOcc.toFixed(1)}%</td>
+        <td>${avgTargOcc ? avgTargOcc.toFixed(1) + '%' : '—'}</td>
+        <td>${avgRate ? 'R' + avgRate.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '—'}</td>
+        <td>${avgRateTarget ? 'R' + avgRateTarget.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '—'}</td>
+        <td style="color:#34d399">R${(totals.revenue/1e6).toFixed(2)}M</td>
+        <td>${totals.budget ? 'R' + (totals.budget/1e6).toFixed(2) + 'M' : '—'}</td>
+    </tr>`;
+
+    // Charts
+    const labels = rows.map(r => r.shortLabel);
+
+    // Occupancy chart
+    if(reportOccChart) reportOccChart.destroy();
+    const occCtx = document.getElementById('reportOccChart').getContext('2d');
+    reportOccChart = new Chart(occCtx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Confirmed Occ %', data: rows.map(r => r.confirmedOccPct.toFixed(1)), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.1)', tension: 0.3, fill: true, pointRadius: 3 },
+                { label: 'Total Occ %', data: rows.map(r => r.totalOccPct.toFixed(1)), borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.05)', tension: 0.3, pointRadius: 3 },
+                { label: 'Target %', data: rows.map(r => r.occTargetPct || null), borderColor: '#f59e0b', borderDash: [5,5], tension: 0.3, pointRadius: 2 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+            scales: {
+                x: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { display: false } },
+                y: { max: 100, ticks: { color: '#64748b', font: { size: 9 }, callback: v => v + '%' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+            }
+        }
+    });
+
+    // Revenue chart
+    if(reportRevChart) reportRevChart.destroy();
+    const revCtx = document.getElementById('reportRevChart').getContext('2d');
+    reportRevChart = new Chart(revCtx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Revenue', data: rows.map(r => (r.revenue / 1e6).toFixed(2)), backgroundColor: 'rgba(52,211,153,0.6)', borderRadius: 4 },
+                { label: 'Budget', data: rows.map(r => (r.budget / 1e6).toFixed(2)), backgroundColor: 'rgba(245,158,11,0.3)', borderRadius: 4 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+            scales: {
+                x: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { display: false } },
+                y: { ticks: { color: '#64748b', font: { size: 9 }, callback: v => 'R' + v + 'M' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+            }
+        }
+    });
+
+    if(loading) loading.classList.add('hidden');
 }
 
 // ============ BUDGET VS ACTUAL ============
