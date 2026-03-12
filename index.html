@@ -848,7 +848,7 @@ async function renderRevenueByMonth() {
     } else {
         // Pull DayEnds (big response) once, then cache.
         try {
-            dayEnds = await sempaGet('OpenAPI/Venues/PMSDayEnds', { pVenueID: vid }) || [];
+            dayEnds = await sempaGet(`OpenAPI/Venues/PMSDayEnds?pVenueID=${vid}`) || [];
             // Cache last 12 months (historical) snapshot
             const rangeStart = toYMD(new Date(now.getFullYear(), now.getMonth()-11, 1));
             const rangeEnd = toYMD(new Date(now.getFullYear(), now.getMonth()+1, 0));
