@@ -24,12 +24,13 @@ module.exports = async (req, res) => {
     if (key !== 'path') params.append(key, value);
   }
   const qs = params.toString();
-  const url = `https://internal.semper.co.za/IntegrationsAPIDebug/${path}${qs ? '?' + qs : ''}`;
+  // Production base URL (live environment)
+  const url = `https://iis-prod.semper-services.com/IntegrationsAPI/${path}${qs ? '?' + qs : ''}`;
 
   return new Promise((resolve) => {
     const options = {
       headers: {
-        'x-channel': 'NTc0',
+        'x-channel': 'NTgy',
         'x-api-key': '12345678900987654321!@#$%%$#@!',
         'x-token': 'T3BlbkFQSQ==',
         'Accept': 'application/json',
