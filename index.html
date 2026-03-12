@@ -588,6 +588,41 @@ async function cacheSaveDayEnds12m(venueId, rangeStart, rangeEnd, dayEndsArr) {
     }
 }
 
+async function cacheGetForecastMonthly(venueId) {
+    try {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}&kind=forecast_monthly`);
+        if(!r.ok) return null;
+        const j = await r.json();
+        const rec = j?.record || null;
+        if(!rec?.payload?.months) return null;
+        return rec;
+    } catch(e) {
+        console.warn('cache get forecast failed', e);
+        return null;
+    }
+}
+
+async function cacheSaveForecastMonthly(venueId, rangeStart, rangeEnd, monthsArr) {
+    try {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}&kind=forecast_monthly`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                venueId,
+                kind: 'forecast_monthly',
+                rangeStart,
+                rangeEnd,
+                fetchedAt: new Date().toISOString(),
+                payload: { months: monthsArr }
+            })
+        });
+        return r.ok;
+    } catch(e) {
+        console.warn('cache save forecast failed', e);
+        return false;
+    }
+}
+
 // ============ INIT ============
 async function initApp() {
     document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -1583,51 +1618,110 @@ async function renderFinancialForecast(){
         return ci && ci >= now && ci <= end && (r.Status !== 'Cancelled');
     }).sort((a,b) => (a.CheckInDate||'').localeCompare(b.CheckInDate||''));
 
-    // Group by month and enrich a limited number of reservations per month to estimate Total Acc
+    // If we have a cached monthly forecast, use it (fast)
+    const cachedMonthly = await cacheGetForecastMonthly(venueId);
+    if(cachedMonthly && cacheFreshHours(cachedMonthly.fetched_at, 24)) {
+        const monthRows = cachedMonthly.payload.months || [];
+
+        let totAcc=0, totComm=0, totNet=0;
+        tbody.innerHTML = monthRows.map(mr => {
+            const totalAcc = Number(mr.totalAcc || 0);
+            const commission = totalAcc * commissionPct;
+            const netAcc = totalAcc - commission;
+
+            const accPreVat = vatPct > 0 ? (totalAcc / (1+vatPct)) : totalAcc;
+            const commPreVat = vatPct > 0 ? (commission / (1+vatPct)) : commission;
+            const netPreVat = vatPct > 0 ? (netAcc / (1+vatPct)) : netAcc;
+
+            totAcc += totalAcc; totComm += commission; totNet += netAcc;
+
+            return `
+                <tr>
+                    <td class="text-white font-medium">${monthLabelLong(mr.y, mr.m)}</td>
+                    <td>${mr.roomNights}</td>
+                    <td>${Number(mr.avgPax||0).toFixed(1)}</td>
+                    <td>${mr.bedNights}</td>
+                    <td class="text-emerald-300">${fmtMoney(totalAcc)}</td>
+                    <td class="text-amber-300">${fmtMoney(commission)}</td>
+                    <td class="text-slate-100">${fmtMoney(netAcc)}</td>
+                    <td>${fmtMoney(accPreVat)}</td>
+                    <td>${fmtMoney(commPreVat)}</td>
+                    <td>${fmtMoney(netPreVat)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        summary.textContent = `Loaded cached monthly forecast (${monthRows.length} months). Totals: Acc ${fmtMoney(totAcc)} · Comm ${fmtMoney(totComm)} · Net ${fmtMoney(totNet)}.`;
+        return;
+    }
+
+    // Otherwise compute FULL sums (this can take a bit) and cache for 24h.
     const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    const months = {}; // key -> {year,month, roomNights, pax, bedNights, reservationIds:[]}
+    const months = {}; // key -> {y,m, roomNights, paxSum, bedNights, reservationIds:[]}
 
     for(const r of res) {
         const ci = new Date(r.CheckInDate);
         const key = monthKey(ci);
-        if(!months[key]) months[key] = { y: ci.getFullYear(), m: ci.getMonth()+1, roomNights:0, pax:0, bedNights:0, reservationIds:[] };
+        if(!months[key]) months[key] = { key, y: ci.getFullYear(), m: ci.getMonth()+1, roomNights:0, paxSum:0, bedNights:0, reservationIds:[] };
         const rn = nightsBetween(r.CheckInDate, r.CheckOutDate);
         months[key].roomNights += rn;
-        const pax = paxCountFromReservation(r) || (r.Guests?.length || 0);
-        months[key].pax += pax;
-        months[key].bedNights += rn * pax;
         months[key].reservationIds.push(r.ReservationID);
     }
 
     const monthRows = Object.keys(months)
         .sort()
         .slice(0, 12)
-        .map(k => ({ key: k, ...months[k] }));
+        .map(k => months[k]);
 
-    // For accuracy, enrich up to N reservations per month to sum AccommodationTotal
-    const perMonthEnrich = 25;
-    const details = {};
+    // Build a single worklist of ALL reservation IDs in these months
     let work = [];
     for(const mr of monthRows) {
-        mr.enrichIds = mr.reservationIds.slice(0, perMonthEnrich);
-        work = work.concat(mr.enrichIds.map(id => ({ monthKey: mr.key, id })));
+        work = work.concat(mr.reservationIds.map(id => ({ monthKey: mr.key, id })));
     }
 
+    summary.textContent = `Computing full monthly totals… fetching ${work.length} reservation financials.`;
+
+    const details = {}; // reservationId -> PMSReservation
     let idx=0;
-    const conc=6;
+    const conc=10;
     async function worker(){
         while(idx < work.length){
             const w = work[idx++];
             const d = await sempaGet(`OpenAPI/Reservations/PMSReservation?pVenueID=${venueId}&pReservationID=${w.id}`);
             if(d) details[w.id]=d;
+            if(idx % 25 === 0) summary.textContent = `Computing… ${idx}/${work.length} loaded.`;
         }
     }
     await Promise.all(Array.from({length: conc}, () => worker()));
 
-    let totAcc=0, totComm=0, totNet=0;
+    // Reduce to monthly totals
+    monthRows.forEach(mr => {
+        let acc=0, paxSum=0, bedNights=0;
+        for(const id of mr.reservationIds){
+            const d = details[id] || {};
+            acc += Number(d.AccommodationTotal || 0);
+            const pax = paxCountFromReservation(d) || 0;
+            const r = res.find(x => x.ReservationID === id);
+            const rn = r ? nightsBetween(r.CheckInDate, r.CheckOutDate) : 0;
+            paxSum += pax;
+            bedNights += rn * pax;
+        }
+        mr.totalAcc = acc;
+        mr.bedNights = bedNights;
+        mr.avgPax = mr.reservationIds.length ? (paxSum / mr.reservationIds.length) : 0;
+    });
 
+    // Cache result
+    const rangeStart = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+    const rangeEnd = toYMD(new Date(now.getFullYear(), now.getMonth()+12, 0));
+    await cacheSaveForecastMonthly(venueId, rangeStart, rangeEnd, monthRows.map(m=>({
+        y:m.y,m:m.m,roomNights:m.roomNights,avgPax:m.avgPax,bedNights:m.bedNights,totalAcc:m.totalAcc
+    })));
+
+    // Render
+    let totAcc=0, totComm=0, totNet=0;
     tbody.innerHTML = monthRows.map(mr => {
-        const totalAcc = mr.enrichIds.reduce((s,id)=> s + Number(details[id]?.AccommodationTotal||0), 0);
+        const totalAcc = Number(mr.totalAcc || 0);
         const commission = totalAcc * commissionPct;
         const netAcc = totalAcc - commission;
 
@@ -1637,14 +1731,11 @@ async function renderFinancialForecast(){
 
         totAcc += totalAcc; totComm += commission; totNet += netAcc;
 
-        const label = monthLabelLong(mr.y, mr.m);
-        const avgPax = mr.reservationIds.length ? (mr.pax / mr.reservationIds.length) : 0;
-
         return `
             <tr>
-                <td class="text-white font-medium">${label}</td>
+                <td class="text-white font-medium">${monthLabelLong(mr.y, mr.m)}</td>
                 <td>${mr.roomNights}</td>
-                <td>${avgPax.toFixed(1)}</td>
+                <td>${Number(mr.avgPax||0).toFixed(1)}</td>
                 <td>${mr.bedNights}</td>
                 <td class="text-emerald-300">${fmtMoney(totalAcc)}</td>
                 <td class="text-amber-300">${fmtMoney(commission)}</td>
@@ -1656,7 +1747,7 @@ async function renderFinancialForecast(){
         `;
     }).join('');
 
-    summary.textContent = `Months shown: ${monthRows.length}. Totals: Acc ${fmtMoney(totAcc)} · Comm ${fmtMoney(totComm)} · Net ${fmtMoney(totNet)}. (Revenue uses up to ${perMonthEnrich} enriched bookings per month)`;
+    summary.textContent = `Computed full totals and cached (${monthRows.length} months). Totals: Acc ${fmtMoney(totAcc)} · Comm ${fmtMoney(totComm)} · Net ${fmtMoney(totNet)}.`;
 }
 
 // ============ BUDGET VS ACTUAL ============
