@@ -969,19 +969,8 @@ async function showDailyDetail(venueId, roomTypeId, roomTypeName, year, month) {
     }
     html += '</div>';
 
-    // Show reservation list for this month/room type
-    const active = getActiveReservations().filter(r =>
-        r.RoomType?.ProductTypeID === roomTypeId &&
-        r.CheckInDate?.substring(0,7) <= `${year}-${String(month).padStart(2,'0')}` &&
-        r.CheckOutDate?.substring(0,7) >= `${year}-${String(month).padStart(2,'0')}`
-    );
-    if(active.length) {
-        html += '<div class="mt-4 border-t border-white/5 pt-4"><h4 class="text-xs font-semibold text-slate-300 mb-2">Reservations this month</h4>';
-        active.forEach(r => {
-            html += `<div class="flex items-center gap-3 p-2 rounded bg-slate-800/50 mb-1 text-xs"><span class="text-white font-medium">${guestName(r)}</span><span class="text-slate-400">${fmtShort(r.CheckInDate)} → ${fmtShort(r.CheckOutDate)}</span>${statusBadge(r.Status)}<span class="text-slate-500">Room ${r.RoomName||'—'}</span></div>`;
-        });
-        html += '</div>';
-    }
+    // Note: We intentionally do NOT show reservation details here.
+    // Calendar drilldown is occupancy-by-day only (cleaner, faster, less noise).
 
     content.innerHTML = html;
 }
