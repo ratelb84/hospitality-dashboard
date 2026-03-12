@@ -127,16 +127,25 @@
                 <div class="stat-card"><div class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-1">Departures Today</div><div id="statDepartures" class="text-2xl font-bold text-rose-400">—</div><div class="text-xs text-slate-500 mt-1">Check-outs</div></div>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 card">
-                    <div class="card-header">
-                        <h3 class="text-sm font-semibold text-white">Occupancy (Confirmed vs Provisional)</h3>
-                        <p class="text-xs text-slate-500 mt-0.5">12 months forward · % of capacity</p>
+                <div class="lg:col-span-2 grid grid-cols-1 gap-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-sm font-semibold text-white">Occupancy (Confirmed / Provisional / Total)</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">12 months forward · % of capacity (budget target overlay)</p>
+                        </div>
+                        <div class="p-6"><canvas id="occupancyChart" height="200"></canvas></div>
                     </div>
-                    <div class="p-6"><canvas id="occupancyChart" height="180"></canvas></div>
-                    <div class="border-t border-slate-700/60"></div>
-                    <div class="p-6"><canvas id="revenueChart" height="180"></canvas></div>
-                    <div class="px-6 pb-6 text-xs text-slate-500">Revenue is summed from DayEnds TotalSales per month. Budget line comes from your Budget settings.</div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-sm font-semibold text-white">Revenue by Month</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">TotalSales from DayEnds · budget overlay</p>
+                        </div>
+                        <div class="p-6"><canvas id="revenueChart" height="200"></canvas></div>
+                        <div class="px-6 pb-6 text-xs text-slate-500">If revenue looks empty, we may need to refresh the DayEnds cache.</div>
+                    </div>
                 </div>
+
                 <div class="card"><div class="card-header"><h3 class="text-sm font-semibold text-white">Upcoming Arrivals</h3><p class="text-xs text-slate-500 mt-0.5">Next 7 days</p></div><div id="upcomingArrivals" class="p-4 space-y-2 max-h-[420px] overflow-y-auto scroll-area"></div></div>
             </div>
         </div>
@@ -470,7 +479,7 @@ function cacheFreshHours(tsIso, hours) {
 
 async function cacheGetReservations12m(venueId) {
     try {
-        const r = await fetch(`${CACHE_API}?venueId=${venueId}`);
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}&kind=reservations`);
         if(!r.ok) return null;
         const j = await r.json();
         return j?.record || null;
@@ -482,7 +491,7 @@ async function cacheGetReservations12m(venueId) {
 
 async function cacheSaveReservations12m(venueId, rangeStart, rangeEnd, reservationsArr) {
     try {
-        const r = await fetch(`${CACHE_API}?venueId=${venueId}`, {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}&kind=reservations`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -496,6 +505,41 @@ async function cacheSaveReservations12m(venueId, rangeStart, rangeEnd, reservati
         return r.ok;
     } catch(e) {
         console.warn('cache save failed', e);
+        return false;
+    }
+}
+
+async function cacheGetDayEnds12m(venueId) {
+    try {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}&kind=dayends`);
+        if(!r.ok) return null;
+        const j = await r.json();
+        const rec = j?.record || null;
+        if(!rec?.payload?.dayEnds) return null;
+        return rec;
+    } catch(e) {
+        console.warn('cache get dayends failed', e);
+        return null;
+    }
+}
+
+async function cacheSaveDayEnds12m(venueId, rangeStart, rangeEnd, dayEndsArr) {
+    try {
+        const r = await fetch(`${CACHE_API}?venueId=${venueId}&kind=dayends`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                venueId,
+                kind: 'dayends',
+                rangeStart,
+                rangeEnd,
+                fetchedAt: new Date().toISOString(),
+                payload: { dayEnds: dayEndsArr }
+            })
+        });
+        return r.ok;
+    } catch(e) {
+        console.warn('cache save dayends failed', e);
         return false;
     }
 }
@@ -796,15 +840,26 @@ async function renderRevenueByMonth() {
 
     const vid = parseInt(selectedVenueId) || 19138;
 
-    // Pull day ends (big response), then filter client-side to our 12 months.
+    // Prefer cached DayEnds (12 months) to avoid a huge fetch every login.
     let dayEnds = [];
-    try {
-        dayEnds = await sempaGet('OpenAPI/Venues/PMSDayEnds', { pVenueID: vid }) || [];
-    } catch(e) {
-        dayEnds = [];
+    const cached = await cacheGetDayEnds12m(vid);
+    if(cached?.payload?.dayEnds?.length && cacheFreshHours(cached.fetched_at, 24)) {
+        dayEnds = cached.payload.dayEnds;
+    } else {
+        // Pull DayEnds (big response) once, then cache.
+        try {
+            dayEnds = await sempaGet('OpenAPI/Venues/PMSDayEnds', { pVenueID: vid }) || [];
+            // Cache last 12 months (historical) snapshot
+            const rangeStart = toYMD(new Date(now.getFullYear(), now.getMonth()-11, 1));
+            const rangeEnd = toYMD(new Date(now.getFullYear(), now.getMonth()+1, 0));
+            await cacheSaveDayEnds12m(vid, rangeStart, rangeEnd, dayEnds);
+        } catch(e) {
+            dayEnds = [];
+        }
     }
 
-    for(let i=0;i<12;i++) {
+    // Revenue is historical: last 12 months ending current month
+    for(let i=-11;i<=0;i++) {
         const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
         const y = d.getFullYear();
         const m = d.getMonth()+1;

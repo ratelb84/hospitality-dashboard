@@ -26,7 +26,9 @@ module.exports = async (req, res) => {
   const venueId = parseInt(req.query.venueId || req.body?.venueId || '0', 10);
   if (!venueId) return res.status(400).json({ error: 'Missing venueId' });
 
-  const cacheKey = `reservations_12m_v1_${venueId}`;
+  const kind = (req.query.kind || req.body?.kind || 'reservations').toString();
+  const safeKind = kind.replace(/[^a-z0-9_\-]/gi, '').slice(0, 40) || 'reservations';
+  const cacheKey = `${safeKind}_12m_v1_${venueId}`;
 
   try {
     const { url, key } = supabaseConfig();
