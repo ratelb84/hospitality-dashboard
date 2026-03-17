@@ -3,35 +3,49 @@
 const https = require('https');
 
 // Mock data for when SEMPA is down
+// Using Nambiti Hills (VenueID: 19138) as production venue
 const mockData = {
   PMSReservationsInPeriod: {
     result: {
       reservations: [
         {
-          reservationId: 'RES001',
-          venueId: 58946,
-          checkIn: '2026-03-17',
-          checkOut: '2026-03-20',
-          roomTypeId: 1,
-          guestName: 'John Smith',
-          status: 'Confirmed',
-          pax: 2,
-          roomNumber: '101',
-          rateCode: 'STD',
-          amount: 450.00
+          ReservationID: 'RES001',
+          VenueID: 19138,
+          CheckInDate: '2026-03-17',
+          CheckOutDate: '2026-03-20',
+          RoomTypeID: 1,
+          GuestName: 'John Smith',
+          Status: 'Confirmed',
+          Pax: 2,
+          RoomNumber: '101',
+          RateCode: 'STD',
+          Amount: 1200.00
         },
         {
-          reservationId: 'RES002',
-          venueId: 58946,
-          checkIn: '2026-03-18',
-          checkOut: '2026-03-25',
-          roomTypeId: 2,
-          guestName: 'Jane Doe',
-          status: 'Confirmed',
-          pax: 4,
-          roomNumber: '205',
-          rateCode: 'SUITE',
-          amount: 750.00
+          ReservationID: 'RES002',
+          VenueID: 19138,
+          CheckInDate: '2026-03-18',
+          CheckOutDate: '2026-03-25',
+          RoomTypeID: 2,
+          GuestName: 'Jane Doe',
+          Status: 'Confirmed',
+          Pax: 4,
+          RoomNumber: '205',
+          RateCode: 'SUITE',
+          Amount: 2450.00
+        },
+        {
+          ReservationID: 'RES003',
+          VenueID: 19138,
+          CheckInDate: '2026-03-22',
+          CheckOutDate: '2026-03-24',
+          RoomTypeID: 1,
+          GuestName: 'Bob Wilson',
+          Status: 'Provisional',
+          Pax: 1,
+          RoomNumber: '102',
+          RateCode: 'STD',
+          Amount: 800.00
         }
       ]
     }
@@ -39,25 +53,32 @@ const mockData = {
   PMSAvailable: {
     result: {
       available: [
-        { date: '2026-03-17', roomTypeId: 1, available: 8, outOfService: 2 },
-        { date: '2026-03-18', roomTypeId: 1, available: 6, outOfService: 2 },
-        { date: '2026-03-17', roomTypeId: 2, available: 4, outOfService: 0 }
+        { Date: '2026-03-17', RoomTypeID: 1, Available: 8, OutOfService: 2 },
+        { Date: '2026-03-18', RoomTypeID: 1, Available: 6, OutOfService: 2 },
+        { Date: '2026-03-19', RoomTypeID: 1, Available: 7, OutOfService: 2 },
+        { Date: '2026-03-17', RoomTypeID: 2, Available: 4, OutOfService: 0 },
+        { Date: '2026-03-18', RoomTypeID: 2, Available: 3, OutOfService: 0 },
+        { Date: '2026-03-19', RoomTypeID: 2, Available: 4, OutOfService: 0 }
       ]
     }
   },
   PMSRoomCount: {
     result: {
-      roomTypes: [
-        { roomTypeId: 1, name: 'Standard Room', count: 10, outOfService: 2 },
-        { roomTypeId: 2, name: 'Suite', count: 5, outOfService: 0 }
+      RoomTypes: [
+        { RoomTypeID: 1, Name: 'Luxury Lodge', Count: 10, OutOfService: 2 },
+        { RoomTypeID: 2, Name: 'Premium Suite', Count: 5, OutOfService: 0 }
       ]
     }
   },
   PMSMonthRates: {
     result: {
-      rates: [
-        { month: '2026-03', roomTypeId: 1, rateCode: 'STD', rate: 150.00 },
-        { month: '2026-03', roomTypeId: 2, rateCode: 'SUITE', rate: 250.00 }
+      MonthlyRates: [
+        { Month: '2026-03', RoomTypeID: 1, RateCode: 'STD', Rate: 400.00 },
+        { Month: '2026-03', RoomTypeID: 2, RateCode: 'SUITE', Rate: 650.00 },
+        { Month: '2026-04', RoomTypeID: 1, RateCode: 'STD', Rate: 420.00 },
+        { Month: '2026-04', RoomTypeID: 2, RateCode: 'SUITE', Rate: 680.00 },
+        { Month: '2026-05', RoomTypeID: 1, RateCode: 'STD', Rate: 450.00 },
+        { Month: '2026-05', RoomTypeID: 2, RateCode: 'SUITE', Rate: 700.00 }
       ]
     }
   }
