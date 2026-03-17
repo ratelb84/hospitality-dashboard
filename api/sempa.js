@@ -108,8 +108,17 @@ module.exports = async (req, res) => {
         try {
           const json = JSON.parse(data);
           res.status(200).json(json);
-        } catch {
-          res.status(200).send(data);
+        } catch (e) {
+          // Failed to parse as JSON - might be HTML error page from SEMPA
+          if (data.includes('<!DOCTYPE') || data.includes('<html') || data.includes('Could not load')) {
+            // SEMPA returned an error page, use mock data
+            console.log(`SEMPA error page detected (${path}), using mock data`);
+            const mockResponse = mockData[path] || { result: { error: 'SEMPA unavailable, using mock data' } };
+            res.status(200).json(mockResponse);
+          } else {
+            // Unknown response format
+            res.status(500).json({ error: 'Failed to parse SEMPA response', details: data.substring(0, 100) });
+          }
         }
         resolve();
       });
